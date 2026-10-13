@@ -44,6 +44,7 @@ type Values struct {
 	UpstreamConnectBudget time.Duration
 	MinerIdleTimeout      time.Duration
 	UpstreamIdleTimeout   time.Duration
+	UpstreamJobTimeout    time.Duration
 	MaxConnections        int
 	MaxPendingConnections int
 	MaxConnPerIP          int
@@ -151,8 +152,7 @@ const (
 
 // Defs lists all settings in display order.
 var Defs = []Def{
-	// Worker name the pool check (Test button, check before a switch)
-	// authorizes with.
+	// Worker name used by background, manual and pre-switch pool checks.
 	def(Def{
 		Key: "test_worker", Group: "logins", Type: TypeString,
 		Default: "proxytest", MinLen: 1, MaxLen: 32, Pattern: workerPattern,
@@ -301,6 +301,12 @@ var Defs = []Def{
 	}, dur(func(v *Values) *time.Duration { return &v.UpstreamIdleTimeout })),
 
 	def(Def{
+		Key: "upstream_job_timeout", Group: "timeouts", Type: TypeDuration,
+		Default: minute, Min: 10 * sec, Max: 60 * minute,
+		Applies: AppliesImmediately,
+	}, dur(func(v *Values) *time.Duration { return &v.UpstreamJobTimeout })),
+
+	def(Def{
 		Key: "max_connections", Group: "limits", Type: TypeInt,
 		Default: 5000, Min: 10, Max: 100000,
 		Applies: AppliesNewConnections,
@@ -389,6 +395,10 @@ func crossCheck(v *Values) map[string]apierr.Msg {
 	if v.UpstreamConnectBudget < v.UpstreamDialTimeout {
 		errs["upstream_connect_budget"] = apierr.M("setting_budget_below_dial",
 			"must not be less than upstream_dial_timeout ({dial})", "dial", FormatDuration(v.UpstreamDialTimeout))
+	}
+	if v.UpstreamJobTimeout > v.UpstreamIdleTimeout {
+		errs["upstream_job_timeout"] = apierr.M("setting_job_above_idle",
+			"must not be more than upstream_idle_timeout ({idle})", "idle", FormatDuration(v.UpstreamIdleTimeout))
 	}
 	if v.MaxPendingConnections > v.MaxConnections {
 		errs["max_pending_connections"] = apierr.M("setting_pending_above_total",

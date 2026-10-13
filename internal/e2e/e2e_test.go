@@ -28,10 +28,13 @@ import (
 
 // fakePool is a minimal Stratum pool that records what it receives.
 type fakePool struct {
-	ln       net.Listener
-	mu       sync.Mutex
-	received []map[string]json.RawMessage
-	conns    []net.Conn
+	ln         net.Listener
+	mu         sync.Mutex
+	received   []map[string]json.RawMessage
+	conns      []net.Conn
+	banned     bool
+	noJobs     bool
+	rejectUser string
 }
 
 func newFakePool(t *testing.T) *fakePool {
@@ -81,6 +84,7 @@ func (p *fakePool) serve(c net.Conn) {
 		}
 		p.mu.Lock()
 		p.received = append(p.received, m)
+		banned, noJobs, rejectUser := p.banned, p.noJobs, p.rejectUser
 		p.mu.Unlock()
 		var method string
 		json.Unmarshal(m["method"], &method)
@@ -92,7 +96,16 @@ func (p *fakePool) serve(c net.Conn) {
 			send(`{"id":` + id + `,"result":[[["mining.notify","ae68"]],"08000002",4],"error":null}`)
 			send(`{"id":null,"method":"mining.set_difficulty","params":[1024]}`)
 		case "mining.authorize":
+			var params []string
+			json.Unmarshal(m["params"], &params)
+			if banned || len(params) > 0 && rejectUser != "" && params[0] == rejectUser {
+				send(`{"id":` + id + `,"result":false,"error":[24,"miner still banned",null]}`)
+				continue
+			}
 			send(`{"id":` + id + `,"result":true,"error":null}`)
+			if !noJobs {
+				send(`{"id":null,"method":"mining.notify","params":["job1","prev","c1","c2",[],"20000000","1d00ffff","00000000",true]}`)
+			}
 		case "mining.submit":
 			var params []string
 			json.Unmarshal(m["params"], &params)
@@ -103,6 +116,8 @@ func (p *fakePool) serve(c net.Conn) {
 			}
 		case "test.reconnect":
 			send(`{"id":null,"method":"client.reconnect","params":["evil.example.com",3333,0]}`)
+		case "test.keepalive":
+			send(`{"id":null,"method":"mining.set_difficulty","params":[1024]}`)
 		}
 	}
 }
@@ -140,6 +155,7 @@ type proxy struct {
 	stats  *stats.Collector
 	st     *state.Store
 	cancel context.CancelFunc
+	set    *settings.Store
 }
 
 func startProxy(t *testing.T, pools ...*fakePool) *proxy {
@@ -156,6 +172,7 @@ func startProxy(t *testing.T, pools ...*fakePool) *proxy {
 	}
 	ev := events.New(500)
 	reg := session.NewRegistry(ev)
+	set.OnChange(reg.RefreshIdleDeadlines)
 	col := stats.NewCollector()
 	mgr := pool.NewManager(st, set, reg, ev)
 	for i, fp := range pools {
@@ -175,7 +192,7 @@ func startProxy(t *testing.T, pools ...*fakePool) *proxy {
 	var wg sync.WaitGroup
 	go l.Serve(ctx, &wg)
 	t.Cleanup(func() { cancel(); reg.CloseAll("test end") })
-	return &proxy{addr: l.BoundAddr().String(), mgr: mgr, reg: reg, ev: ev, stats: col, st: st, cancel: cancel}
+	return &proxy{addr: l.BoundAddr().String(), mgr: mgr, reg: reg, ev: ev, stats: col, st: st, cancel: cancel, set: set}
 }
 
 // asic is a fake miner.

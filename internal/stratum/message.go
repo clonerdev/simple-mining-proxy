@@ -72,6 +72,20 @@ func ResultTrue(raw json.RawMessage) bool {
 	return string(bytes.TrimSpace(raw)) == "true"
 }
 
+// IsJob recognizes the minimum usable shape of a Stratum V1 job. It does
+// not validate the contents of the block template, which belong to the miner.
+func IsJob(m *Message) bool {
+	if m.Method != "mining.notify" {
+		return false
+	}
+	params, err := ParamsArray(m.Params)
+	if err != nil || len(params) < 9 {
+		return false
+	}
+	id, ok := StringAt(params, 0)
+	return ok && id != ""
+}
+
 // ParamsArray splits params into raw elements.
 func ParamsArray(raw json.RawMessage) ([]json.RawMessage, error) {
 	var params []json.RawMessage

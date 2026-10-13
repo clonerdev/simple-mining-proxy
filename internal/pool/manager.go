@@ -80,12 +80,25 @@ type Manager struct {
 
 	lastFailback time.Time
 	lastProbe    time.Time
-	probing      atomic.Bool
+
+	probeMu      sync.Mutex
+	probes       map[string]*addressProbe
+	probePending map[string]bool
+	probeWake    chan struct{}
+	probeWG      sync.WaitGroup
+	versions     map[string]uint64 // protected by hmu; invalidate old checks
+	testWorker   string            // protected by hmu
 }
 
 func NewManager(st *state.Store, set *settings.Store, reg *session.Registry, ev *events.Log) *Manager {
-	m := &Manager{st: st, settings: set, reg: reg, ev: ev, addrs: map[string]*addrHealth{}, pools: map[string]*poolHealth{}}
+	m := &Manager{
+		st: st, settings: set, reg: reg, ev: ev,
+		addrs: map[string]*addrHealth{}, pools: map[string]*poolHealth{},
+		probes: map[string]*addressProbe{}, probePending: map[string]bool{},
+		probeWake: make(chan struct{}, 1), versions: map[string]uint64{}, testWorker: set.Get().TestWorker,
+	}
 	m.setSnapshot(st.Current())
+	set.OnChange(m.settingsChanged)
 	return m
 }
 
@@ -144,7 +157,10 @@ func (m *Manager) Pick(ctx context.Context) (*session.Upstream, error) {
 				m.dialResult(p, a, err)
 			}
 			if err == nil {
-				return &session.Upstream{Conn: conn, PoolID: p.ID, PoolName: p.Name, Addr: a.String(), Template: p.Username, Password: p.Password}, nil
+				return &session.Upstream{
+					Conn: conn, PoolID: p.ID, PoolName: p.Name, Addr: a.String(), Template: p.Username, Password: p.Password,
+					OnFailure: func(kind session.UpstreamFailure, err error) { m.sessionFailure(p, a, kind, err) },
+				}, nil
 			}
 			errs = append(errs, p.Name+" "+a.String()+": "+err.Error())
 		}
@@ -188,43 +204,34 @@ func (m *Manager) Effective() string {
 func (m *Manager) Run(ctx context.Context) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
+	defer m.probeWG.Wait()
 	for {
 		now := time.Now()
-		if now.Sub(m.lastProbe) >= m.settings.Get().PoolProbeInterval && !m.probing.Load() {
-			m.lastProbe = now
-			m.probing.Store(true)
-			go func() {
-				defer m.probing.Store(false)
-				m.probeAll(ctx)
-			}()
+		if ctx.Err() != nil {
+			return
 		}
+		if now.Sub(m.lastProbe) >= m.settings.Get().PoolProbeInterval {
+			m.lastProbe = now
+			m.probeAll(ctx)
+		}
+		m.probeRequested(ctx)
+		m.checkFailover()
 		m.checkFailback(now)
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-m.probeWake:
 		}
 	}
 }
 
 func (m *Manager) probeAll(ctx context.Context) {
-	var wg sync.WaitGroup
 	for _, p := range m.snap.Load().Pools {
 		for _, a := range p.Addresses {
-			wg.Add(1)
-			go func(p state.Pool, a state.Address) {
-				defer wg.Done()
-				rtt, err := Check(ctx, p, a, false, "")
-				if ctx.Err() != nil {
-					return
-				}
-				if m.stillHas(p, a) {
-					m.probeResult(p, a, rtt, err)
-				}
-			}(p, a)
+			m.startProbe(ctx, p, a)
 		}
 	}
-	wg.Wait()
 }
 
 // checkFailback drains sessions that are not on the active pool once the
@@ -258,7 +265,7 @@ func (m *Manager) checkFailback(now time.Time) {
 // ---- activation ----
 
 // Activate makes id the active pool: validate → test → persist → switch →
-// drain. On any error before persist nothing changes.
+// drain. Failed checks leave the configured roles unchanged.
 func (m *Manager) Activate(ctx context.Context, id string, force bool) (int, error) {
 	return m.activate(ctx, id, force, "manual", nil)
 }
@@ -283,22 +290,36 @@ func (m *Manager) Restore(ctx context.Context, id string, fallback []string, rea
 // activate switches to id. A nil fallback rotates the order: the previous
 // active pool becomes the first fallback.
 func (m *Manager) activate(ctx context.Context, id string, force bool, reason string, fallback []string) (int, error) {
-	m.opMu.Lock()
-	defer m.opMu.Unlock()
-
 	p, ok := m.snap.Load().Get(id)
 	if !ok {
 		return 0, apierr.PoolNotFound(id)
 	}
+	version, worker := m.checkVersion(id), m.settings.Get().TestWorker
 	if !force {
-		if err := anyOK(CheckAll(ctx, p, true, m.settings.Get().TestWorker)); err != nil {
+		if err := anyOK(m.checkSaved(ctx, p)); err != nil {
 			return 0, apierr.PoolCheckFailed(apierr.M("pool_check_failed", "pool {pool} check failed: {error}", "pool", p.Name, "error", err.Error()))
 		}
 	}
+	// Checks never hold opMu while waiting for an address gate. Validate the
+	// captured configuration again before persisting the operator's choice.
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	current, ok := m.Snapshot().Get(id)
+	if !ok {
+		return 0, apierr.PoolNotFound(id)
+	}
+	if !force && (!sameEndpoint(p, current) || p.Username != current.Username || p.Password != current.Password ||
+		m.checkVersion(id) != version || m.settings.Get().TestWorker != worker) {
+		return 0, apierr.PoolCheckFailed(apierr.M("pool_check_failed", "pool {pool} check failed: {error}", "pool", current.Name, "error", "pool configuration changed during the check; retry"))
+	}
+	p = current
 	var from string
 	err := m.st.Mutate(func(f *state.File) error {
 		if _, ok := f.Pool(id); !ok {
 			return apierr.PoolNotFound(id)
+		}
+		if !force && (m.checkVersion(id) != version || m.settings.Get().TestWorker != worker) {
+			return apierr.PoolCheckFailed(apierr.M("pool_check_failed", "pool {pool} check failed: {error}", "pool", p.Name, "error", "pool configuration changed during the check; retry"))
 		}
 		from = f.ActivePool
 		f.ActivePool = id
@@ -335,7 +356,7 @@ func (m *Manager) TestPool(ctx context.Context, id string) ([]AddrResult, error)
 	if !ok {
 		return nil, apierr.PoolNotFound(id)
 	}
-	return checked(CheckAll(ctx, p, true, m.settings.Get().TestWorker))
+	return checked(m.checkSaved(ctx, p))
 }
 
 // TestConfig checks a pool configuration from the editor before it is saved.
@@ -629,7 +650,7 @@ func (m *Manager) Update(id string, in Input, reconnect bool) (state.Pool, int, 
 		if err := checkName(f, next); err != nil {
 			return err
 		}
-		addrChanged = !sameEndpoint(next, *p)
+		addrChanged = !sameEndpoint(next, *p) || next.Username != p.Username || next.Password != p.Password
 		old = *p
 		*p = next
 		updated = next
@@ -753,7 +774,8 @@ func sameEndpoint(a, b state.Pool) bool {
 // captured pool p still applies to the current configuration.
 func (m *Manager) stillHas(p state.Pool, a state.Address) bool {
 	cur, ok := m.snap.Load().Get(p.ID)
-	return ok && cur.TLS == p.TLS && cur.TLSSkipVerify == p.TLSSkipVerify && slices.Contains(cur.Addresses, a)
+	return ok && cur.TLS == p.TLS && cur.TLSSkipVerify == p.TLSSkipVerify &&
+		cur.Username == p.Username && cur.Password == p.Password && slices.Contains(cur.Addresses, a)
 }
 
 func addrList(p state.Pool) string {

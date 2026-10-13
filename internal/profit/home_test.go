@@ -59,6 +59,9 @@ func stratum(t *testing.T) state.Address {
 						result = `[[["mining.notify","1"]],"00000001",4]`
 					}
 					c.Write([]byte(`{"id":` + string(m.ID) + `,"result":` + result + `,"error":null}` + "\n"))
+					if m.Method == "mining.authorize" {
+						c.Write([]byte(`{"id":null,"method":"mining.notify","params":["job1","prev","c1","c2",[],"20000000","1d00ffff","00000000",true]}` + "\n"))
+					}
 				}
 			}()
 		}

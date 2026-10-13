@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -24,13 +25,28 @@ import (
 // Upstream is a connected pool with the pool settings captured at pick time:
 // later edits of the pool apply to new sessions only.
 type Upstream struct {
-	Conn     net.Conn
-	PoolID   string
-	PoolName string
-	Addr     string // host:port of the pool server
-	Template string
-	Password string
+	Conn      net.Conn
+	PoolID    string
+	PoolName  string
+	Addr      string // host:port of the pool server
+	Template  string
+	Password  string
+	OnFailure func(UpstreamFailure, error)
 }
+
+type UpstreamFailure string
+
+const (
+	AuthorizationRejected UpstreamFailure = "authorization_rejected"
+	JobTimeout            UpstreamFailure = "job_timeout"
+)
+
+type upstreamError struct {
+	kind UpstreamFailure
+	err  error
+}
+
+func (e *upstreamError) Error() string { return e.err.Error() }
 
 // Router picks and dials a pool for a new session.
 type Router interface {
@@ -100,9 +116,13 @@ type Session struct {
 	deadlineMu        sync.Mutex
 	lastMinerActivity time.Time
 	lastPoolActivity  time.Time
+	authorizedAt      time.Time
+	lastJob           time.Time
 }
 
 func (s *Session) PoolID() string { return s.up.PoolID }
+
+func (s *Session) PoolAddr() string { return s.up.Addr }
 
 // Worker is the ASIC login of the session, "" before mining.authorize.
 func (s *Session) Worker() string {
@@ -331,8 +351,45 @@ func (s *Session) prepareMinerRead() {
 
 func (s *Session) preparePoolRead() {
 	s.deadlineMu.Lock()
-	s.up.Conn.SetReadDeadline(s.lastPoolActivity.Add(s.srv.Settings.Get().UpstreamIdleTimeout))
+	s.up.Conn.SetReadDeadline(s.poolDeadlineLocked(s.srv.Settings.Get()))
 	s.deadlineMu.Unlock()
+}
+
+func (s *Session) jobBaseLocked() time.Time {
+	if s.authorizedAt.IsZero() {
+		return time.Time{}
+	}
+	if s.lastJob.After(s.authorizedAt) {
+		return s.lastJob
+	}
+	return s.authorizedAt
+}
+
+func (s *Session) poolDeadlineLocked(v *settings.Values) time.Time {
+	if base := s.jobBaseLocked(); !base.IsZero() {
+		// Settings keep the job timeout at most as long as the idle timeout.
+		// Use the job deadline after authorization so an equal idle timeout
+		// cannot close the session just before its pool failure is reported.
+		return base.Add(v.UpstreamJobTimeout)
+	}
+	return s.lastPoolActivity.Add(v.UpstreamIdleTimeout)
+}
+
+func (s *Session) jobTimedOut(now time.Time) bool {
+	s.deadlineMu.Lock()
+	defer s.deadlineMu.Unlock()
+	base := s.jobBaseLocked()
+	return !base.IsZero() && !now.Before(base.Add(s.srv.Settings.Get().UpstreamJobTimeout))
+}
+
+func (s *Session) reportFailure(err *upstreamError) {
+	// A shutdown or an operator's drain must not turn into a pool failure.
+	s.mu.Lock()
+	closed := s.closeReason != ""
+	s.mu.Unlock()
+	if !closed && s.up.OnFailure != nil {
+		s.up.OnFailure(err.kind, err.err)
+	}
 }
 
 func (s *Session) markMinerActivity(now time.Time) {
@@ -352,7 +409,7 @@ func (s *Session) markPoolActivity(now time.Time) {
 func (s *Session) refreshIdleDeadlines(v *settings.Values) {
 	s.deadlineMu.Lock()
 	s.miner.SetReadDeadline(s.lastMinerActivity.Add(v.MinerIdleTimeout))
-	s.up.Conn.SetReadDeadline(s.lastPoolActivity.Add(v.UpstreamIdleTimeout))
+	s.up.Conn.SetReadDeadline(s.poolDeadlineLocked(v))
 	s.deadlineMu.Unlock()
 }
 
@@ -395,18 +452,35 @@ func (s *Session) forwardFromMiner(line []byte, msg *stratum.Message) ([]byte, e
 // poolLoop relays pool → ASIC.
 func (s *Session) poolLoop(lr *stratum.LineReader) error {
 	for {
+		if s.jobTimedOut(time.Now()) {
+			failure := &upstreamError{kind: JobTimeout, err: fmt.Errorf("no mining.notify within %s", s.srv.Settings.Get().UpstreamJobTimeout)}
+			s.reportFailure(failure)
+			return failure
+		}
 		s.preparePoolRead()
 		line, err := lr.ReadLine()
 		if err != nil {
+			if errors.Is(err, os.ErrDeadlineExceeded) && s.jobTimedOut(time.Now()) {
+				// Reuse the same path even when the pool has gone completely silent.
+				continue
+			}
 			return fmt.Errorf("pool: %w", err)
 		}
 		s.markPoolActivity(time.Now())
 		out, err := s.fromPool(line)
-		if err != nil {
-			return err
+		if out != nil {
+			if writeErr := writeLine(s.miner, out); writeErr != nil {
+				if failure, ok := err.(*upstreamError); ok {
+					s.reportFailure(failure)
+				}
+				return fmt.Errorf("write to miner: %w", writeErr)
+			}
 		}
-		if err := writeLine(s.miner, out); err != nil {
-			return fmt.Errorf("write to miner: %w", err)
+		if err != nil {
+			if failure, ok := err.(*upstreamError); ok {
+				s.reportFailure(failure)
+			}
+			return err
 		}
 	}
 }
@@ -551,6 +625,12 @@ func (s *Session) fromPool(line []byte) ([]byte, error) {
 					s.mu.Unlock()
 				}
 			}
+		case "mining.notify":
+			if stratum.IsJob(msg) {
+				s.deadlineMu.Lock()
+				s.lastJob = time.Now()
+				s.deadlineMu.Unlock()
+			}
 		case "client.reconnect":
 			s.srv.Events.Throttled("reconnect:"+s.up.PoolID, time.Minute, "pool_reconnect",
 				"%s sent client.reconnect %s; not forwarded, closing the session so the ASIC comes back to the proxy",
@@ -587,13 +667,21 @@ func (s *Session) fromPool(line []byte) ([]byte, error) {
 		delete(s.pendingAuth, key)
 	}
 	s.mu.Unlock()
-	if isAuth && !stratum.ResultTrue(msg.Result) {
+	if isAuth && (!stratum.ResultTrue(msg.Result) || !stratum.IsNull(msg.Error)) {
 		reason := stratum.ErrorReason(msg.Error)
 		if reason == "" {
 			reason = "result " + compact(msg.Result)
 		}
 		s.srv.Events.Throttled("auth:"+s.up.PoolID+":"+auth.user, time.Minute, "authorization_failed",
 			"authorization failed on %s for %q: %s", s.up.PoolName, auth.user, reason)
+		return line, &upstreamError{kind: AuthorizationRejected, err: fmt.Errorf("mining.authorize as %q: %s", auth.user, reason)}
+	}
+	if isAuth {
+		s.deadlineMu.Lock()
+		if s.authorizedAt.IsZero() {
+			s.authorizedAt = now
+		}
+		s.deadlineMu.Unlock()
 	}
 	return line, nil
 }

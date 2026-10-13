@@ -102,8 +102,8 @@
     "delete": "Delete",
     "fastest": "Fastest address: new sessions go here",
     "switchTitle": "Switch pool",
-    "switchText_one": "Switch {{count}} miner to {{pool}}? The pool is checked first (subscribe + authorize), then miners reconnect gradually.",
-    "switchText_other": "Switch {{count}} miners to {{pool}}? The pool is checked first (subscribe + authorize), then miners reconnect gradually.",
+    "switchText_one": "Switch {{count}} miner to {{pool}}? The pool is checked first (subscribe + authorize + notify), then miners reconnect gradually.",
+    "switchText_other": "Switch {{count}} miners to {{pool}}? The pool is checked first (subscribe + authorize + notify), then miners reconnect gradually.",
     "switchConfirm": "Switch",
     "checkFailedTitle": "Pool check failed",
     "switchAnyway": "Switch without the check anyway?",
@@ -259,12 +259,12 @@
     "items": {
       "test_worker": {
         "title": "Test worker",
-        "desc": "Worker name the pool check (the Test button and the check before a switch) authorizes with. It may stay in the pool dashboard as an inactive worker.",
+        "desc": "Worker name used by background checks, the Test button and checks before a switch. Checks authorize and wait for a job. This worker may stay in the pool dashboard as inactive.",
         "note": "Latin letters, digits, “-”, “_”"
       },
       "switch_drain": {
         "title": "Reconnect window",
-        "desc": "How long the proxy spreads out disconnecting miners on a pool switch, a failback and “Reconnect all”. Longer is gentler on the pool, but part of the farm stays on the old pool longer. 0 means all at once."
+        "desc": "How long the proxy spreads out disconnecting miners on a pool switch, failover, failback and “Reconnect all”. Longer is gentler on the pool, but part of the farm stays on the old pool longer. 0 means all at once."
       },
       "failback_delay": {
         "title": "Failback delay",
@@ -272,7 +272,7 @@
       },
       "pool_probe_interval": {
         "title": "Pool check interval",
-        "desc": "How often the proxy checks every address of every pool (connect and mining.subscribe, no authorization) and measures the connect time. More often detects an outage sooner but connects to pools more."
+        "desc": "How often the proxy checks every pool address: connection, mining.subscribe, authorization with the test worker and a mining.notify job, within 10 seconds. Two failed checks exclude an address; two successful checks confirm recovery."
       },
       "tls_handshake_timeout": {
         "title": "TLS handshake timeout",
@@ -298,6 +298,10 @@
       "upstream_idle_timeout": {
         "title": "Pool idle timeout",
         "desc": "If the pool sends nothing for longer than this, the session is closed and the ASIC reconnects. Too small a value breaks sessions on pools that rarely send jobs."
+      },
+      "upstream_job_timeout": {
+        "title": "Pool job timeout",
+        "desc": "After authorization, how long to wait for a usable mining.notify job. Other messages do not extend this time. A timeout excludes the pool address and reconnects its miners through another address or a fallback pool. Must not exceed the pool idle timeout. Applies to open sessions immediately."
       },
       "max_connections": {
         "title": "Total connections",
@@ -524,6 +528,7 @@
     "setting_option": "allowed: {{options}}",
     "setting_length": "{{min}}–{{max}} characters",
     "setting_budget_below_dial": "must not be less than “Pool connect timeout” ({{dial}})",
+    "setting_job_above_idle": "must not be more than “Pool idle timeout” ({{idle}})",
     "setting_pending_above_total": "must not be more than “Total connections”",
     "history_param": "{{name}} must be an integer",
     "history_range": "The start of the period must be before its end",

@@ -121,6 +121,35 @@ func TestNewStoreRejectsInvalidSaved(t *testing.T) {
 	}
 }
 
+func TestJobTimeoutDoesNotExceedIdleTimeout(t *testing.T) {
+	s, _, err := NewStore(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Prepare(map[string]json.RawMessage{"upstream_job_timeout": raw(`"1h"`)})
+	var fieldErr *apierr.Error
+	if !errors.As(err, &fieldErr) || fieldErr.Fields["upstream_job_timeout"].Key != "setting_job_above_idle" {
+		t.Fatalf("job timeout above idle accepted: %v", err)
+	}
+	if s.Get().UpstreamJobTimeout != time.Minute {
+		t.Fatal("invalid timeout changed the current settings")
+	}
+	pending, err := s.Prepare(map[string]json.RawMessage{
+		"upstream_job_timeout": raw(`"1h"`), "upstream_idle_timeout": raw(`"1h"`),
+	})
+	if err != nil {
+		t.Fatalf("equal timeouts rejected: %v", err)
+	}
+	s.Commit(pending)
+	_, err = s.Prepare(map[string]json.RawMessage{"upstream_idle_timeout": raw(`"15m"`)})
+	if !errors.As(err, &fieldErr) || fieldErr.Fields["upstream_job_timeout"].Key != "setting_job_above_idle" {
+		t.Fatalf("reducing idle below job timeout accepted: %v", err)
+	}
+	if _, _, err := NewStore(map[string]json.RawMessage{"upstream_idle_timeout": raw(`"1m"`)}); err != nil {
+		t.Fatalf("old configuration with minimum idle timeout rejected: %v", err)
+	}
+}
+
 func TestReturnMarginNotAboveMargin(t *testing.T) {
 	s, _, err := NewStore(nil)
 	if err != nil {

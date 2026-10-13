@@ -70,8 +70,7 @@ func Dial(ctx context.Context, p state.Pool, a state.Address, timeout time.Durat
 
 // Check performs a Stratum-level check of one address: connect,
 // mining.subscribe and, if authorize is set, mining.authorize for the test
-// worker. The background probe does not authorize to avoid
-// creating workers on the pool. rtt is the connect time, also on failure
+// worker and a usable mining.notify. rtt is the connect time, also on failure
 // after a successful connect.
 func Check(ctx context.Context, p state.Pool, a state.Address, authorize bool, testWorker string) (rtt time.Duration, err error) {
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
@@ -88,15 +87,28 @@ func Check(ctx context.Context, p state.Pool, a state.Address, authorize bool, t
 	defer stop()
 
 	r := bufio.NewReaderSize(conn, 4096)
-	if err := call(conn, r, 1, "mining.subscribe", []any{userAgent}, false); err != nil {
+	gotJob := false
+	if err := callObserved(conn, r, 1, "mining.subscribe", []any{userAgent}, false, &gotJob); err != nil {
 		return rtt, fmt.Errorf("mining.subscribe: %w", timedOut(ctx, err))
 	}
 	if !authorize {
 		return rtt, nil
 	}
 	rw := stratum.RewriteLogin(testWorker, "x", p.Username, p.Password)
-	if err := call(conn, r, 2, "mining.authorize", []any{rw.User, rw.Password}, true); err != nil {
+	if err := callObserved(conn, r, 2, "mining.authorize", []any{rw.User, rw.Password}, true, &gotJob); err != nil {
 		return rtt, fmt.Errorf("mining.authorize as %q: %w", rw.User, timedOut(ctx, err))
+	}
+	lr := stratum.NewLineReader(r, 64*1024)
+	for !gotJob {
+		line, err := lr.ReadLine()
+		if err != nil {
+			return rtt, fmt.Errorf("mining.notify: %w", timedOut(ctx, err))
+		}
+		msg, err := stratum.Parse(line)
+		if err != nil {
+			return rtt, fmt.Errorf("mining.notify: invalid response: %w", err)
+		}
+		gotJob = stratum.IsJob(msg)
 	}
 	return rtt, nil
 }
@@ -139,6 +151,12 @@ func CheckAll(ctx context.Context, p state.Pool, authorize bool, testWorker stri
 // call sends a request and waits for the response with the same id,
 // skipping notifications (set_difficulty, notify) that may come first.
 func call(conn net.Conn, r *bufio.Reader, id int, method string, params []any, wantTrue bool) error {
+	return callObserved(conn, r, id, method, params, wantTrue, nil)
+}
+
+// Preserve jobs interleaved with either handshake response, including jobs
+// sent before authorization. A job never substitutes for a successful reply.
+func callObserved(conn net.Conn, r *bufio.Reader, id int, method string, params []any, wantTrue bool, gotJob *bool) error {
 	req, _ := json.Marshal(map[string]any{"id": id, "method": method, "params": params})
 	if _, err := conn.Write(append(req, '\n')); err != nil {
 		return err
@@ -152,6 +170,9 @@ func call(conn net.Conn, r *bufio.Reader, id int, method string, params []any, w
 		msg, err := stratum.Parse(line)
 		if err != nil {
 			return fmt.Errorf("invalid response: %w", err)
+		}
+		if gotJob != nil && stratum.IsJob(msg) {
+			*gotJob = true
 		}
 		// Some pools echo a numeric id back as a string; accept both forms.
 		if want := strconv.Itoa(id); msg.Method != "" || (msg.IDKey() != want && msg.IDKey() != strconv.Quote(want)) {

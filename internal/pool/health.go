@@ -158,8 +158,18 @@ func (m *Manager) addrEntry(k string) *addrHealth {
 // probeResult records a background check of one address; rtt is its
 // connect time when the connection succeeded.
 func (m *Manager) probeResult(p state.Pool, a state.Address, rtt time.Duration, err error) {
+	m.probeResultIf(p, a, rtt, err, nil)
+}
+
+// Validation and mutation share hmu so a test-worker change cannot land
+// between rejecting stale checks and recording their results.
+func (m *Manager) probeResultIf(p state.Pool, a state.Address, rtt time.Duration, err error, accept func() bool) {
 	now := time.Now()
 	m.hmu.Lock()
+	if accept != nil && !accept() {
+		m.hmu.Unlock()
+		return
+	}
 	h := m.addrEntry(addrKey(p.ID, a))
 	h.lastCheck = now
 	prev := h.status
@@ -422,6 +432,7 @@ func (m *Manager) forgetHealth(id string) {
 	m.hmu.Lock()
 	defer m.hmu.Unlock()
 	delete(m.pools, id)
+	m.versions[id]++
 	prefix := id + "|"
 	for k := range m.addrs {
 		if strings.HasPrefix(k, prefix) {
@@ -431,9 +442,9 @@ func (m *Manager) forgetHealth(id string) {
 }
 
 // poolEdited keeps the health of unchanged addresses after an edit. A change
-// of TLS settings affects every address, so all of them start over.
+// of TLS or login settings affects every address, so all of them start over.
 func (m *Manager) poolEdited(old, next state.Pool) {
-	if old.TLS != next.TLS || old.TLSSkipVerify != next.TLSSkipVerify {
+	if old.TLS != next.TLS || old.TLSSkipVerify != next.TLSSkipVerify || old.Username != next.Username || old.Password != next.Password {
 		m.forgetHealth(next.ID)
 		return
 	}
@@ -442,6 +453,7 @@ func (m *Manager) poolEdited(old, next state.Pool) {
 		keep[addrKey(next.ID, a)] = true
 	}
 	m.hmu.Lock()
+	m.versions[next.ID]++
 	for _, a := range old.Addresses {
 		if k := addrKey(old.ID, a); !keep[k] {
 			delete(m.addrs, k)

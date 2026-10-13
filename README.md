@@ -92,7 +92,7 @@ docker compose start proxy
 
    Addresses takes one `host:port` per line, for servers of the same pool in different regions. The proxy measures the connect time to each (the median of the last probes), sends new sessions to the fastest working address and falls back to the next one if it fails. The fastest address is marked with ★.
 2. Choose TLS if the pool requires it. Pasting an address with a scheme (`stratum+tcp://`, `stratum+tls://` or `stratum+ssl://`) selects the transport. Certificate verification is on by default; turn it off only for a known pool with a self-signed certificate.
-3. Test checks the form before you save it: it connects, sends `mining.subscribe` and `mining.authorize` with the test worker, on every address. Then save the pool and make it active.
+3. Test checks the form before you save it: it connects, sends `mining.subscribe` and `mining.authorize` with the test worker, and waits for a usable `mining.notify`, on every address. Then save the pool and make it active.
 4. Add fallback pools and set their order.
 5. Review the test worker, timeouts and limits in Settings.
 6. Copy the TCP or TLS address from the Dashboard into your miners:
@@ -168,7 +168,7 @@ The screen shows the everyday groups open and the technical ones (timeouts, limi
 | `test_worker` | `proxytest` | 1–32 characters | Worker name used by pool checks. |
 | `switch_drain` | 10 s | 0 s – 5 min | Time over which a switch, failback or "reconnect all" spreads the disconnects. |
 | `failback_delay` | 2 min | 30 s – 1 h | How long the active pool must stay up before sessions return to it. |
-| `pool_probe_interval` | 30 s | 10 s – 10 min | Health check period of every pool address. |
+| `pool_probe_interval` | 30 s | 10 s – 10 min | Health check period of every pool address: subscribe, authorize and a job within 10 seconds. |
 | `profit_switch` | off | off, advise, auto | Profit switching mode. |
 | `profit_interval` | 24 h | 1 h – 7 days | How often the coins are compared. |
 | `profit_margin` | 5 % | 0–50 % | How much more another coin must earn before switching to it. |
@@ -186,6 +186,7 @@ The screen shows the everyday groups open and the technical ones (timeouts, limi
 | `upstream_connect_budget` | 15 s | 5 s – 2 min | Total time a session may spend trying addresses and pools; at least `upstream_dial_timeout`. |
 | `miner_idle_timeout` | 10 min | 1 min – 1 h | A miner that sends nothing for this long is disconnected. |
 | `upstream_idle_timeout` | 15 min | 1 min – 1 h | If the pool sends nothing for this long, the session is closed and the miner reconnects. |
+| `upstream_job_timeout` | 1 min | 10 s – 1 h | After authorization, maximum wait for a usable mining.notify. Other messages do not extend it. Must not exceed `upstream_idle_timeout`. Applies immediately. |
 | `max_connections` | 5000 | 10 – 100000 | Miner connections in total. |
 | `max_pending_connections` | 500 | 10 – 10000 | Connections that have not sent their first message yet; at most `max_connections`. |
 | `max_conn_per_ip` | 0 (off) | 0 – 100000 | Connections from one IP address. |
@@ -195,6 +196,12 @@ The screen shows the everyday groups open and the technical ones (timeouts, limi
 | `history_retention` | 365 days | 7 days – 10 years | Hourly totals; at least `history_detail_retention`. |
 | `history_miner_retention` | 90 days | 7 days – 10 years | Hourly points per miner; at least `history_detail_retention`. |
 | `log_level` | info | debug, info, warn, error | Log detail. Passwords are never logged. |
+
+Pool health means the address accepts the configured test worker and provides a usable `mining.notify`, not just a TCP connection. Two failed checks mark an address DOWN; two successful checks confirm recovery. Checks run in the background, from the Test button and before a switch. The test worker may appear as inactive in the pool dashboard.
+
+A rejected miner authorization is forwarded to the ASIC, its session is closed, and a full check of that address is requested. Requests are combined and background checks of an address start at most once every 10 seconds. A single worker rejection does not exclude the address without failed checks. Saved-pool manual tests update health; testing unsaved editor settings does not.
+
+If an authorized session receives no usable jobs for `upstream_job_timeout`, the address is immediately excluded, even if it still sends difficulty changes or other messages. Open sessions on failed addresses reconnect over `switch_drain`, first through another address of the same pool, then through the ordered fallback pools. This also applies to failed fallback pools. The selected active pool and fallback order stay saved; return to the active pool waits for full checks and `failback_delay`.
 
 ## Charts and history
 
