@@ -183,6 +183,8 @@ export interface TelegramStatus {
   username?: string
   error?: string
   chats: number
+  /** The token is set by TELEGRAM_BOT_TOKEN: it cannot be changed from the panel. */
+  token_from_env: boolean
 }
 
 export interface SettingsPayload {

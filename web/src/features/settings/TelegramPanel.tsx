@@ -59,43 +59,47 @@ export function TelegramPanel({ status }: { status: TelegramStatus }) {
       <div className="kv">
         <span className="muted">{t('settings.telegram.bot')}</span>
         <span className={status.username ? 'mono' : undefined}>{bot}</span>
-        <label className="muted" htmlFor="telegram-token">
+        <label className="muted" htmlFor={status.token_from_env ? undefined : 'telegram-token'}>
           {t('settings.telegram.token')}
         </label>
-        <div>
-          <form
-            className="actions"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void saveToken()
-            }}
-          >
-            <input
-              id="telegram-token"
-              type="password"
-              autoComplete="new-password"
-              spellCheck={false}
-              className="grow"
-              placeholder={status.configured ? t('settings.telegram.tokenReplace') : '123456789:AA…'}
-              value={token}
-              aria-invalid={!!tokenError}
-              onChange={(e) => {
-                setToken(e.target.value)
-                setTokenError('')
+        {status.token_from_env ? (
+          <div className="small muted">{t('settings.telegram.tokenFromEnv')}</div>
+        ) : (
+          <div>
+            <form
+              className="actions"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void saveToken()
               }}
-            />
-            <button type="submit" disabled={busy || !token.trim()}>
-              {t('common.save')}
-            </button>
-            {status.configured && (
-              <button type="button" disabled={busy} onClick={() => void removeToken()}>
-                {t('settings.telegram.remove')}
+            >
+              <input
+                id="telegram-token"
+                type="password"
+                autoComplete="new-password"
+                spellCheck={false}
+                className="grow"
+                placeholder={status.configured ? t('settings.telegram.tokenReplace') : '123456789:AA…'}
+                value={token}
+                aria-invalid={!!tokenError}
+                onChange={(e) => {
+                  setToken(e.target.value)
+                  setTokenError('')
+                }}
+              />
+              <button type="submit" disabled={busy || !token.trim()}>
+                {t('common.save')}
               </button>
-            )}
-          </form>
-          {tokenError && <div className="field-error">{tokenError}</div>}
-          <div className="small muted">{t('settings.telegram.tokenHelp')}</div>
-        </div>
+              {status.configured && (
+                <button type="button" disabled={busy} onClick={() => void removeToken()}>
+                  {t('settings.telegram.remove')}
+                </button>
+              )}
+            </form>
+            {tokenError && <div className="field-error">{tokenError}</div>}
+            <div className="small muted">{t('settings.telegram.tokenHelp')}</div>
+          </div>
+        )}
         <span className="muted">{t('settings.telegram.chats')}</span>
         <span>{status.chats || t('settings.telegram.noChats')}</span>
         {status.error && (

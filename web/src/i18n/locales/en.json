@@ -438,12 +438,13 @@
       "sent": "Test message sent",
       "token": "Bot token",
       "tokenReplace": "set; paste a new one to replace it",
-      "tokenHelp": "Create a bot with @BotFather (/newbot) and paste its token here. The proxy checks it with Telegram before saving. The token is kept in state.json on the server and is never shown again.",
+      "tokenHelp": "Better: set TELEGRAM_BOT_TOKEN in .env, so the token never passes through the browser. A token pasted here is checked with Telegram, kept in state.json on the server and never shown again.",
       "tokenSaved": "Bot {{bot}} connected",
       "tokenRemoved": "Bot token removed",
       "remove": "Remove",
       "removeTitle": "Remove the bot token?",
-      "removeText": "The bot stops answering and alerts go to Events only. The chats stay in the settings."
+      "removeText": "The bot stops answering and alerts go to Events only. The chats stay in the settings.",
+      "tokenFromEnv": "The bot token is set by TELEGRAM_BOT_TOKEN in .env. Change it there and restart the container."
     },
     "search": "Find a setting",
     "expandAll": "Expand all",
@@ -548,7 +549,8 @@
     "events_level": "The level must be info, warn or error",
     "profit_home_not_taking_part": "Pool {{pool}} does not take part in profit switching: tick it in the pool editor first",
     "profit_home_required": "Choose a pool, or none",
-    "setting_return_above_margin": "must not be more than the switching margin ({{margin}}%)"
+    "setting_return_above_margin": "must not be more than the switching margin ({{margin}}%)",
+    "telegram_token_env": "The bot token is set by TELEGRAM_BOT_TOKEN: change it in the environment and restart the container"
   },
   "stats": {
     "title": "Charts",

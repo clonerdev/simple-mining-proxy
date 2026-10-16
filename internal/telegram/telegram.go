@@ -54,6 +54,10 @@ const (
 	deniedEvery = time.Minute
 	// maxRetryAfter: a longer rate-limit wait drops the message instead.
 	maxRetryAfter = time.Minute
+	// apiTimeout bounds one Bot API call that has no deadline of its own
+	// (getUpdates has one). Without it a hung connection to Telegram would
+	// stall the sender and the poller for as long as the process runs.
+	apiTimeout = 30 * time.Second
 )
 
 // Farm is the part of /status that the monitor does not know.
@@ -87,13 +91,16 @@ type Hunt struct {
 }
 
 type Deps struct {
-	Token    string // at start, from state.json; SetToken changes it; "" keeps the bot quiet
-	APIURL   string // APIURL when empty
-	Client   *http.Client
-	Settings *settings.Store
-	Events   *events.Log
-	Miners   func() []monitor.Miner
-	Farm     func() Farm
+	Token string // at start: TELEGRAM_BOT_TOKEN or state.json; SetToken changes it; "" keeps the bot quiet
+	// TokenFromEnv says that Token comes from the environment: the admin UI
+	// then shows it as managed outside the panel and cannot replace it.
+	TokenFromEnv bool
+	APIURL       string // APIURL when empty
+	Client       *http.Client
+	Settings     *settings.Store
+	Events       *events.Log
+	Miners       func() []monitor.Miner
+	Farm         func() Farm
 }
 
 // Status is what the admin UI shows about the bot.
@@ -101,6 +108,8 @@ type Status struct {
 	Configured bool   `json:"configured"` // a bot token is set
 	Username   string `json:"username,omitempty"`
 	Error      string `json:"error,omitempty"` // of the last polling and of the last sending, "" after a success
+	// TokenFromEnv: the token is set by TELEGRAM_BOT_TOKEN and is read only in the UI.
+	TokenFromEnv bool `json:"token_from_env"`
 }
 
 // What a failure is about: a success clears only a failure of its kind, so
@@ -118,6 +127,8 @@ type Bot struct {
 	gap    time.Duration
 	tick   time.Duration
 	now    func() time.Time
+	// timeout bounds a Bot API call without a deadline of its own.
+	timeout time.Duration
 
 	mu       sync.Mutex
 	token    string
@@ -139,7 +150,7 @@ func New(d Deps) *Bot {
 	return &Bot{
 		d: d, api: strings.TrimRight(api, "/"), token: d.Token, changed: make(chan struct{}),
 		alerts: make(chan monitor.Alert, 64), batch: batchDelay, gap: minGap, tick: sendTick, now: time.Now,
-		denied: map[int64]time.Time{},
+		timeout: apiTimeout, denied: map[int64]time.Time{},
 	}
 }
 
@@ -220,7 +231,7 @@ func (b *Bot) Status() Status {
 			errs = append(errs, e)
 		}
 	}
-	return Status{Configured: b.token != "", Username: b.username, Error: strings.Join(errs, "; ")}
+	return Status{Configured: b.token != "", Username: b.username, Error: strings.Join(errs, "; "), TokenFromEnv: b.d.TokenFromEnv}
 }
 
 var (
@@ -282,6 +293,11 @@ func (b *Bot) callWith(ctx context.Context, token, method string, in, out any) e
 	body, err := json.Marshal(in)
 	if err != nil {
 		return err
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, b.timeout)
+		defer cancel()
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.api+"/bot"+token+"/"+method, bytes.NewReader(body))
 	if err != nil {

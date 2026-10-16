@@ -153,8 +153,19 @@ func run() error {
 	// ASICs that stop sending shares go to the events, and to Telegram once
 	// a bot token is set in the admin UI.
 	var mon *monitor.Monitor
+	// TELEGRAM_BOT_TOKEN wins; a token saved in state.json by an earlier
+	// version keeps working until it is moved to the environment.
+	botToken, tokenFromEnv := st.Current().TelegramToken, false
+	if cfg.TelegramBotToken != "" {
+		if !telegram.ValidToken(cfg.TelegramBotToken) {
+			return errors.New("TELEGRAM_BOT_TOKEN does not look like a bot token (123456789:AA… from @BotFather)")
+		}
+		botToken, tokenFromEnv = cfg.TelegramBotToken, true
+	} else if botToken != "" {
+		ev.Warn("telegram_token_stored", "the Telegram bot token is stored in state.json: move it to TELEGRAM_BOT_TOKEN in .env, then remove it in Settings")
+	}
 	bot := telegram.New(telegram.Deps{
-		Token: st.Current().TelegramToken, APIURL: cfg.TelegramAPIURL, Client: httpClient, Settings: set, Events: ev,
+		Token: botToken, TokenFromEnv: tokenFromEnv, APIURL: cfg.TelegramAPIURL, Client: httpClient, Settings: set, Events: ev,
 		Miners: func() []monitor.Miner { return mon.Miners() },
 		Farm:   farmSummary(mgr, collector, timedSw, started),
 	})

@@ -798,6 +798,10 @@ func (s *Server) telegramToken(w http.ResponseWriter, r *http.Request) error {
 	if s.d.Telegram == nil {
 		return errNoTelegramToken
 	}
+	if s.d.Telegram.Status().TokenFromEnv {
+		return apierr.Conflict(apierr.M("telegram_token_env",
+			"the bot token is set by TELEGRAM_BOT_TOKEN: change it in the environment and restart the container"))
+	}
 	var body struct {
 		Token *string `json:"token"`
 	}

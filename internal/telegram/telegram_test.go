@@ -641,3 +641,42 @@ func TestHuntInSummary(t *testing.T) {
 		t.Fatalf("/status:\n%s", got)
 	}
 }
+
+// A Telegram that accepts the connection and never answers must not hold the
+// sender for ever: every call without a deadline of its own is cut off.
+func TestHungTelegramDoesNotStallCalls(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(func() { close(release); srv.Close() })
+
+	b, _ := newBot(t, srv.URL, store(t, map[string]string{"telegram_chats": `"100"`}))
+	b.timeout = 150 * time.Millisecond
+
+	start := time.Now()
+	err := b.send(context.Background(), 100, "hello")
+	if err == nil {
+		t.Fatal("send to a hung server succeeded")
+	}
+	if took := time.Since(start); took > 3*time.Second {
+		t.Fatalf("send took %s, the call timeout is not applied", took)
+	}
+	if strings.Contains(err.Error(), token) {
+		t.Fatalf("the error leaks the token: %v", err)
+	}
+}
+
+func TestStatusReportsTokenFromEnv(t *testing.T) {
+	b, _ := newBot(t, "http://127.0.0.1:1", store(t, nil))
+	if b.Status().TokenFromEnv {
+		t.Fatal("TokenFromEnv is set by default")
+	}
+	b.d.TokenFromEnv = true
+	if !b.Status().TokenFromEnv {
+		t.Fatal("TokenFromEnv is not reported")
+	}
+}

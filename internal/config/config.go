@@ -30,7 +30,12 @@ type Config struct {
 	PublicTCPPort      int
 	PublicTLSPort      int
 	LogFormat          string
-	TelegramAPIURL     string // Bot API server; the bot token is set in the admin UI
+	TelegramAPIURL     string // Bot API server
+	// TelegramBotToken is the bot token from TELEGRAM_BOT_TOKEN. When set it
+	// wins over a token saved earlier in state.json and cannot be changed from
+	// the admin UI: a secret that lives in the environment never travels
+	// through the browser or a backup of the data volume.
+	TelegramBotToken string
 }
 
 // LogValue keeps secrets out of logs.
@@ -41,6 +46,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.String("admin", c.AdminAddr),
 		slog.String("admin_user", c.AdminUsername),
 		slog.Bool("api_token_set", c.APIToken != ""),
+		slog.Bool("telegram_token_from_env", c.TelegramBotToken != ""),
 		slog.String("telegram_api", c.TelegramAPIURL),
 		slog.String("data_dir", c.DataDir),
 	)
@@ -76,9 +82,11 @@ func Load() (*Config, error) {
 		AdminUsername:  env("ADMIN_USERNAME", "admin"),
 		AdminPassword:  os.Getenv("ADMIN_PASSWORD"),
 		APIToken:       strings.TrimSpace(os.Getenv("API_TOKEN")),
-		DataDir:        env("DATA_DIR", "/data"),
-		PublicHost:     env("PUBLIC_HOST", ""),
-		LogFormat:      strings.ToLower(env("LOG_FORMAT", "json")),
+
+		TelegramBotToken: strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN")),
+		DataDir:          env("DATA_DIR", "/data"),
+		PublicHost:       env("PUBLIC_HOST", ""),
+		LogFormat:        strings.ToLower(env("LOG_FORMAT", "json")),
 		// Another Bot API server: a local one, or a mirror where
 		// api.telegram.org is blocked.
 		TelegramAPIURL: strings.TrimRight(env("TELEGRAM_API_URL", "https://api.telegram.org"), "/"),

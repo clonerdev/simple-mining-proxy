@@ -23,6 +23,7 @@ services:
       PUBLIC_TLS_PORT: "${PUBLIC_TLS_PORT:-14443}"
       LOG_FORMAT: "${LOG_FORMAT:-json}"
       TELEGRAM_API_URL: "${TELEGRAM_API_URL:-https://api.telegram.org}"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
     ports:
       - "${PUBLIC_TCP_PORT:-13333}:13333/tcp"
       - "${PUBLIC_TLS_PORT:-14443}:14443/tcp"
