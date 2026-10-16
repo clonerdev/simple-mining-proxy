@@ -27,7 +27,8 @@
   --series-7: #4a3aa7;
   --series-8: #e34948;
   color-scheme: light dark;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.4;
 }
@@ -90,6 +91,38 @@ h2 {
 
 p {
   margin: 8px 0;
+}
+
+/* ---------- right-to-left (Persian) ---------- */
+
+/* The layout mirrors by itself: the rules in this file use logical properties
+   (inline-start/end, text-align: start/end), and <html dir> is set from the
+   language. Only the font and the left-to-right islands are added here. */
+:root:lang(fa) {
+  --font-ui: 'Vazirmatn Variable', Vazirmatn, Tahoma, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Persian text needs a little more room between lines. */
+  line-height: 1.6;
+}
+
+/* Technical values keep their left-to-right shape inside right-to-left text:
+   addresses, ports, hashrates, worker names, numbers in tables, passwords and
+   the charts. isolate stops them from reordering the words around them. */
+[dir='rtl'] :is(.mono, td.num, .card .value, code, kbd, samp, pre, .chart-plot, input[type='password']) {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* The cell itself stays in the table's direction, so a number column is
+   aligned to the end of the row (the left side) and a technical-value column
+   to its start (the right side). */
+[dir='rtl'] td.num {
+  text-align: left;
+}
+[dir='rtl'] td.mono {
+  text-align: right;
+}
+[dir='rtl'] .card .value {
+  text-align: right;
 }
 
 /* ---------- utilities ---------- */
@@ -182,7 +215,7 @@ nav a.active {
 }
 
 .top .right {
-  margin-left: auto;
+  margin-inline-start: auto;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -446,7 +479,7 @@ table {
 
 th,
 td {
-  text-align: left;
+  text-align: start;
   padding: 7px 8px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
@@ -465,7 +498,7 @@ th {
 
 td.num,
 th.num {
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -552,7 +585,7 @@ td.actions-cell .actions {
 
 /* The crosshair is a solid hairline like the grid, not uPlot's dashed one. */
 .chart .u-hz .u-cursor-x {
-  border-right: 1px solid var(--muted);
+  border-inline-end: 1px solid var(--muted);
 }
 
 .chart-legend {
@@ -817,7 +850,7 @@ button.group-head {
   border: none;
   background: none;
   font-weight: 600;
-  text-align: left;
+  text-align: start;
 }
 
 button.group-head:hover:not(:disabled) .name {
@@ -865,8 +898,7 @@ button.group-head:hover:not(:disabled) .name {
 
 .savebar {
   position: fixed;
-  left: 0;
-  right: 0;
+  inset-inline: 0;
   bottom: 0;
   background: var(--panel);
   border-top: 1px solid var(--border);
@@ -953,7 +985,7 @@ button.group-head:hover:not(:disabled) .name {
 
 .toasts {
   position: fixed;
-  right: 16px;
+  inset-inline-end: 16px;
   bottom: 70px;
   display: flex;
   flex-direction: column;
@@ -1049,7 +1081,7 @@ button.group-head:hover:not(:disabled) .name {
   }
 
   .top .right {
-    margin-left: 0;
+    margin-inline-start: 0;
     width: 100%;
     justify-content: space-between;
   }
@@ -1103,19 +1135,22 @@ button.group-head:hover:not(:disabled) .name {
     gap: 12px;
     padding: 3px 0;
     border: none;
-    text-align: right;
+    text-align: end;
   }
 
   table.responsive td[data-label]::before {
     content: attr(data-label);
+    /* The label is text, even in a cell that holds a technical value. */
+    font: inherit;
+    font-family: var(--font-ui);
     color: var(--muted);
-    text-align: left;
+    text-align: start;
     flex-shrink: 0;
   }
 
   table.responsive td.primary {
     display: block;
-    text-align: left;
+    text-align: start;
     padding-bottom: 6px;
   }
 
@@ -1203,8 +1238,7 @@ button.group-head:hover:not(:disabled) .name {
   }
 
   .toasts {
-    left: 10px;
-    right: 10px;
+    inset-inline: 10px;
     bottom: 76px;
   }
 

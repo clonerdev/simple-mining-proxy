@@ -1,7 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { currentLanguage, languages, setLanguage, type Language } from '../i18n'
-
-const names: Record<Language, string> = { en: 'EN', ru: 'RU' }
+import { currentLanguage, languageNames, languages, setLanguage, type Language } from '../i18n'
 
 export function LanguageSelect() {
   const { t } = useTranslation()
@@ -13,8 +11,8 @@ export function LanguageSelect() {
       onChange={(e) => setLanguage(e.target.value as Language)}
     >
       {languages.map((l) => (
-        <option key={l} value={l}>
-          {names[l]}
+        <option key={l} value={l} lang={l}>
+          {languageNames[l]}
         </option>
       ))}
     </select>

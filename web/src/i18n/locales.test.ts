@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import en from './locales/en.json'
+import fa from './locales/fa.json'
 import ru from './locales/ru.json'
 
 type Tree = { [key: string]: string | Tree }
@@ -19,30 +20,42 @@ function flatten(tree: Tree, prefix = ''): Map<string, string> {
 }
 
 const enKeys = flatten(en)
-const ruKeys = flatten(ru)
+const translations = { ru: flatten(ru), fa: flatten(fa) }
 const base = (keys: Map<string, string>) => new Set([...keys.keys()].map((k) => k.replace(pluralSuffix, '')))
 
 const placeholders = (s: string) => [...s.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort()
 
-describe('locales', () => {
-  it('have the same keys', () => {
-    expect([...base(ruKeys)].sort()).toEqual([...base(enKeys)].sort())
+// Single-brace tokens such as {worker} are filled in by the server, not by
+// i18next: they must survive translation untouched.
+const serverTokens = (s: string) => [...s.matchAll(/(?<!\{)\{(\w+)\}(?!\})/g)].map((m) => m[1]).sort()
+
+// The plural forms a language needs, per Intl.PluralRules.
+const pluralForms = (lng: string) => new Intl.PluralRules(lng).resolvedOptions().pluralCategories
+
+describe.each(Object.entries(translations))('locale %s', (lng, keys) => {
+  it('has the same keys as English', () => {
+    expect([...base(keys)].sort()).toEqual([...base(enKeys)].sort())
   })
 
-  it('use the same placeholders', () => {
+  it('uses the same placeholders', () => {
     for (const [key, text] of enKeys) {
       const b = key.replace(pluralSuffix, '')
-      const ruText = ruKeys.get(key) ?? ruKeys.get(`${b}_many`) ?? ''
-      expect(placeholders(ruText), key).toEqual(placeholders(text))
+      const translated = keys.get(key) ?? keys.get(`${b}_other`) ?? keys.get(`${b}_many`) ?? ''
+      expect(placeholders(translated), key).toEqual(placeholders(text))
+      expect(serverTokens(translated), key).toEqual(serverTokens(text))
     }
   })
 
-  it('give Russian plurals every form', () => {
+  it('has every plural form the language uses', () => {
     for (const key of enKeys.keys()) {
       if (!key.endsWith('_one')) continue
       const b = key.slice(0, -'_one'.length)
-      for (const form of ['one', 'few', 'many']) expect(ruKeys.has(`${b}_${form}`), `${b}_${form}`).toBe(true)
+      for (const form of pluralForms(lng)) expect(keys.has(`${b}_${form}`), `${b}_${form}`).toBe(true)
     }
+  })
+
+  it('has no empty text', () => {
+    for (const [key, text] of keys) expect(text.trim(), key).not.toBe('')
   })
 })
 
