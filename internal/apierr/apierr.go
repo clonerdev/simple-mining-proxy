@@ -61,6 +61,11 @@ func NotFound(m Msg) *Error {
 	return &Error{Status: http.StatusNotFound, Code: "not_found", Msg: m}
 }
 
+// Forbidden is returned when the caller is signed in but may not do this.
+func Forbidden(m Msg) *Error {
+	return &Error{Status: http.StatusForbidden, Code: "forbidden", Msg: m}
+}
+
 func Conflict(m Msg) *Error {
 	return &Error{Status: http.StatusConflict, Code: "conflict", Msg: m}
 }

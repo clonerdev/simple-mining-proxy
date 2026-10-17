@@ -90,6 +90,23 @@ func newGuard(path string) *guard {
 	return g
 }
 
+// blocked reports whether ip, or the whole password login, is locked now,
+// without recording anything. A slow password check runs between blocked and
+// attempt, outside the guard's lock, so a flood of logins cannot hold up the
+// token checks of API clients; attempt still decides under the lock.
+func (g *guard) blocked(ip string, now time.Time) (attemptResult, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.global = recent(g.global, now, globalFailWindow)
+	if rec := g.ips[ip]; rec != nil && now.Before(rec.LockedUntil) {
+		return attemptResult{Blocked: true, RetryAt: rec.LockedUntil}, true
+	}
+	if len(g.global) >= globalFailLimit {
+		return attemptResult{Blocked: true, Global: true, RetryAt: g.global[len(g.global)-globalFailLimit].Add(globalFailWindow)}, true
+	}
+	return attemptResult{}, false
+}
+
 // attempt runs verify unless ip or the whole login is locked, and records
 // the outcome. Check, verification and recording happen under one lock, so a
 // burst of parallel requests cannot slip past a limit.

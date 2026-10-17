@@ -17,7 +17,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/famfamfam/simple-mining-proxy/internal/accounts"
 	"github.com/famfamfam/simple-mining-proxy/internal/admin"
+	"github.com/famfamfam/simple-mining-proxy/internal/audit"
 	"github.com/famfamfam/simple-mining-proxy/internal/config"
 	"github.com/famfamfam/simple-mining-proxy/internal/events"
 	"github.com/famfamfam/simple-mining-proxy/internal/history"
@@ -110,6 +112,20 @@ func run() error {
 	mgr := pool.NewManager(st, set, reg, ev)
 
 	srv := &session.Server{Settings: set, Router: mgr, Registry: reg, Events: ev, Stats: collector}
+
+	// Accounts and the audit log live next to state.json. A missing accounts
+	// file is an empty one: the administrator from the environment always
+	// works, so an install that never creates an account behaves as before.
+	acc, err := accounts.Open(filepath.Join(cfg.DataDir, "accounts.json"), cfg.AdminUsername)
+	if err != nil {
+		return fmt.Errorf("accounts: %w", err)
+	}
+	aud, err := audit.Open(filepath.Join(cfg.DataDir, "audit"))
+	if err != nil {
+		return fmt.Errorf("audit log: %w", err)
+	}
+	aud.Prune(set.Get().AuditRetention)
+	set.OnChange(func(v *settings.Values) { go aud.Prune(v.AuditRetention) })
 
 	hist, err := history.New(filepath.Join(cfg.DataDir, "history"),
 		func() history.Sample {
@@ -217,7 +233,7 @@ func run() error {
 	httpSrv := &http.Server{
 		Handler: admin.New(admin.Deps{
 			Config: cfg, State: st, Settings: set, Pools: mgr, Registry: reg,
-			Stats: collector, History: hist, Profit: profitSw, Timed: timedSw, RTT: watcher, Telegram: bot,
+			Stats: collector, History: hist, Profit: profitSw, Timed: timedSw, RTT: watcher, Telegram: bot, Accounts: acc, Audit: aud,
 			Events: ev, Certs: certs, Started: started,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -246,6 +262,18 @@ func run() error {
 	go mgr.Run(ctx)
 	histDone := make(chan struct{})
 	go func() { hist.Run(ctx); close(histDone) }()
+	go func() { // the audit log keeps what audit_retention says, checked daily
+		t := time.NewTicker(24 * time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				aud.Prune(set.Get().AuditRetention)
+			}
+		}
+	}()
 	go profitSw.Run(ctx)
 	go timedSw.Run(ctx)
 	go watcher.Run(ctx)

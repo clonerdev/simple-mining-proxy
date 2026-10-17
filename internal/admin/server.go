@@ -16,7 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/famfamfam/simple-mining-proxy/internal/accounts"
 	"github.com/famfamfam/simple-mining-proxy/internal/apierr"
+	"github.com/famfamfam/simple-mining-proxy/internal/audit"
 	"github.com/famfamfam/simple-mining-proxy/internal/config"
 	"github.com/famfamfam/simple-mining-proxy/internal/events"
 	"github.com/famfamfam/simple-mining-proxy/internal/history"
@@ -48,6 +50,11 @@ type Deps struct {
 	Events   *events.Log
 	Certs    *tlsutil.Certs // nil when the TLS listener is off
 	Started  time.Time
+	// Accounts and Audit may be nil: then only the environment administrator
+	// exists and nothing is audited (tests, and installs that never ran the
+	// new data directory layout).
+	Accounts *accounts.Store
+	Audit    *audit.Log
 }
 
 type Server struct {
@@ -62,41 +69,60 @@ func New(d Deps) http.Handler {
 	if d.Config.DataDir != "" {
 		guardPath = filepath.Join(d.Config.DataDir, "auth-guard.json")
 	}
-	s := &Server{d: d, auth: newAuth(d.Config.AdminUsername, d.Config.AdminPassword, d.Config.APIToken, newGuard(guardPath))}
+	s := &Server{d: d, auth: newAuth(d.Config.AdminUsername, d.Config.AdminPassword, d.Config.APIToken, newGuard(guardPath), d.Accounts)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("POST /api/auth/logout", s.logout)
 
-	api := func(pattern string, h func(http.ResponseWriter, *http.Request) error) {
-		mux.Handle(pattern, s.protected(h))
+	api := func(pattern string, perm accounts.Permission, h func(http.ResponseWriter, *http.Request) error) {
+		mux.Handle(pattern, s.protected(perm, h))
 	}
-	api("GET /api/auth/me", s.me)
-	api("GET /api/status", s.status)
-	api("GET /api/miners", s.miners)
-	api("POST /api/miners/reconnect", s.reconnectAll)
-	api("GET /api/events", s.events)
-	api("GET /api/history", s.history)
-	api("GET /api/history/worker", s.historyWorker)
-	api("GET /api/history/workers", s.historyWorkers)
-	api("GET /api/profit", s.profitStatus)
-	api("POST /api/profit/check", s.profitCheck)
-	api("PUT /api/profit/home", s.profitHome)
-	api("GET /api/timed", s.timedStatus)
-	api("POST /api/timed/start", s.timedStart)
-	api("GET /api/network", s.network)
-	api("GET /api/pools", s.listPools)
-	api("POST /api/pools", s.createPool)
-	api("PUT /api/pools/{id}", s.updatePool)
-	api("DELETE /api/pools/{id}", s.deletePool)
-	api("POST /api/pools/test", s.testConfig)
-	api("POST /api/pools/{id}/test", s.testPool)
-	api("POST /api/pools/{id}/activate", s.activatePool)
-	api("PUT /api/fallback", s.setFallback)
-	api("GET /api/settings", s.getSettings)
-	api("PUT /api/settings", s.putSettings)
-	api("PUT /api/telegram/token", s.telegramToken)
-	api("POST /api/telegram/test", s.telegramTest)
+	const (
+		any_     = accounts.Permission("") // signed in is enough
+		stats    = accounts.StatsView
+		miners   = accounts.MinersView
+		control  = accounts.MinersControl
+		evs      = accounts.EventsView
+		setView  = accounts.SettingsView
+		setEdit  = accounts.SettingsEdit
+		users    = accounts.UsersManage
+		auditing = accounts.AuditView
+	)
+	api("GET /api/auth/me", any_, s.me)
+	api("POST /api/auth/password", any_, s.changeOwnPassword)
+	api("GET /api/status", stats, s.status)
+	api("GET /api/miners", miners, s.miners)
+	api("POST /api/miners/reconnect", control, s.reconnectAll)
+	api("GET /api/events", evs, s.events)
+	api("GET /api/history", stats, s.history)
+	api("GET /api/history/worker", miners, s.historyWorker)
+	api("GET /api/history/workers", miners, s.historyWorkers)
+	api("GET /api/profit", stats, s.profitStatus)
+	api("POST /api/profit/check", setEdit, s.profitCheck)
+	api("PUT /api/profit/home", setEdit, s.profitHome)
+	api("GET /api/timed", stats, s.timedStatus)
+	api("POST /api/timed/start", setEdit, s.timedStart)
+	api("GET /api/network", stats, s.network)
+	api("GET /api/pools", setView, s.listPools)
+	api("POST /api/pools", setEdit, s.createPool)
+	api("PUT /api/pools/{id}", setEdit, s.updatePool)
+	api("DELETE /api/pools/{id}", setEdit, s.deletePool)
+	api("POST /api/pools/test", setEdit, s.testConfig)
+	api("POST /api/pools/{id}/test", setEdit, s.testPool)
+	api("POST /api/pools/{id}/activate", setEdit, s.activatePool)
+	api("PUT /api/fallback", setEdit, s.setFallback)
+	api("GET /api/settings", setView, s.getSettings)
+	api("PUT /api/settings", setEdit, s.putSettings)
+	api("PUT /api/telegram/token", setEdit, s.telegramToken)
+	api("POST /api/telegram/test", setEdit, s.telegramTest)
+	api("GET /api/roles", users, s.roles)
+	api("GET /api/users", users, s.listUsers)
+	api("POST /api/users", users, s.createUser)
+	api("PUT /api/users/{id}", users, s.updateUser)
+	api("DELETE /api/users/{id}", users, s.deleteUser)
+	api("POST /api/users/{id}/password", users, s.resetUserPassword)
+	api("GET /api/audit", auditing, s.auditLog)
 	unknownAPI := func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, apierr.NotFound(apierr.M("api_not_found", "unknown API endpoint")))
 	}
@@ -119,13 +145,13 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) protected(h func(http.ResponseWriter, *http.Request) error) http.Handler {
+func (s *Server) protected(perm accounts.Permission, h func(http.ResponseWriter, *http.Request) error) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ok, res := s.auth.authenticate(r, time.Now())
+		who, res := s.auth.authenticate(r, time.Now())
 		if s.guardFailed(w, clientIP(r), res) {
 			return
 		}
-		if !ok {
+		if who == nil {
 			writeErr(w, errUnauthorized)
 			return
 		}
@@ -133,6 +159,15 @@ func (s *Server) protected(h func(http.ResponseWriter, *http.Request) error) htt
 			writeErr(w, errJSONRequired)
 			return
 		}
+		// The permission is checked here, on the server, for every request:
+		// what the UI hides is a convenience, never the control.
+		if !who.Can(perm) {
+			s.record(who, r, audit.Entry{Action: "access.denied", Result: audit.Denied,
+				Message: r.Method + " " + r.URL.Path, Details: map[string]any{"permission": string(perm)}})
+			writeErr(w, errForbidden)
+			return
+		}
+		r = withPrincipal(r, who)
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		if err := h(w, r); err != nil {
 			e := apierr.From(err)
@@ -142,6 +177,21 @@ func (s *Server) protected(h func(http.ResponseWriter, *http.Request) error) htt
 			writeErr(w, e)
 		}
 	})
+}
+
+// record writes an audit entry made by who.
+func (s *Server) record(who *principal, r *http.Request, e audit.Entry) {
+	if who != nil {
+		e.Actor = who.actor(clientIP(r))
+	} else {
+		e.Actor = audit.Actor{Type: audit.ActorAnonymous, IP: clientIP(r)}
+	}
+	s.d.Audit.Add(e)
+}
+
+// audit records an operation of the signed-in caller.
+func (s *Server) audit(r *http.Request, action string, target audit.Target, details map[string]any) {
+	s.record(principalOf(r), r, audit.Entry{Action: action, Target: target, Details: details})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -162,6 +212,8 @@ var (
 		Msg: apierr.M("login_required", "login required")}
 	errJSONRequired = &apierr.Error{Status: http.StatusUnsupportedMediaType, Code: "json_required",
 		Msg: apierr.M("json_required", "Content-Type: application/json is required")}
+	errForbidden = &apierr.Error{Status: http.StatusForbidden, Code: "forbidden",
+		Msg: apierr.M("forbidden", "your account is not allowed to do this")}
 	errBadCredentials = &apierr.Error{Status: http.StatusUnauthorized, Code: "invalid_credentials",
 		Msg: apierr.M("invalid_credentials", "wrong username or password")}
 )
@@ -217,17 +269,27 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, apierr.From(err))
 		return
 	}
-	id, res := s.auth.attemptLogin(ip, body.Username, body.Password, now)
+	id, who, res := s.auth.attemptLogin(ip, body.Username, body.Password, now)
 	if s.guardFailed(w, ip, res) {
 		return
 	}
 	if !res.OK {
 		s.d.Events.Throttled("login_failed:"+ip, time.Minute, "login_failed", "failed admin login from %s", ip)
+		s.d.Audit.Add(audit.Entry{Actor: audit.Actor{Type: audit.ActorAnonymous, Name: truncate(body.Username, 64), IP: ip},
+			Action: "auth.login", Result: audit.Denied, Message: "wrong username or password"})
 		writeErr(w, errBadCredentials)
 		return
 	}
+	s.record(who, r, audit.Entry{Action: "auth.login"})
 	s.auth.setCookie(w, r, id, int(sessionLifetime/time.Second))
-	writeJSON(w, http.StatusOK, map[string]string{"username": s.d.Config.AdminUsername})
+	writeJSON(w, http.StatusOK, s.meView(who))
+}
+
+func truncate(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
 }
 
 // guardFailed reports new locks as events and answers 429 when the caller is
@@ -264,13 +326,28 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, errJSONRequired)
 		return
 	}
+	if who, _ := s.auth.authenticate(r, time.Now()); who != nil && who.Kind != audit.ActorAPIToken {
+		s.record(who, r, audit.Entry{Action: "auth.logout"})
+	}
 	s.auth.logout(r)
 	s.auth.setCookie(w, r, "", -1)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// meView is what the UI needs to know about the signed-in account.
+func (s *Server) meView(p *principal) map[string]any {
+	perms := make([]string, 0, len(p.perms))
+	for _, x := range p.perms.List() {
+		perms = append(perms, string(x))
+	}
+	return map[string]any{
+		"username": p.Username, "role": p.Role, "permissions": perms,
+		"customer_id": p.CustomerID, "language": p.Language, "user_id": p.UserID,
+	}
+}
+
 func (s *Server) me(w http.ResponseWriter, r *http.Request) error {
-	writeJSON(w, http.StatusOK, map[string]string{"username": s.d.Config.AdminUsername})
+	writeJSON(w, http.StatusOK, s.meView(principalOf(r)))
 	return nil
 }
 
@@ -309,6 +386,7 @@ func (s *Server) miners(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) reconnectAll(w http.ResponseWriter, r *http.Request) error {
 	n := s.d.Pools.ReconnectAll()
+	s.audit(r, "miners.reconnect_all", audit.Target{Type: "miners"}, map[string]any{"sessions": n})
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": n, "window": settings.FormatDuration(s.d.Settings.Get().SwitchDrain)})
 	return nil
 }
@@ -437,6 +515,7 @@ func (s *Server) profitStatus(w http.ResponseWriter, r *http.Request) error {
 // switch happens on schedule; the UI offers a manual switch instead.
 func (s *Server) profitCheck(w http.ResponseWriter, r *http.Request) error {
 	s.d.Profit.Check(r.Context(), false)
+	s.audit(r, "profit.check", audit.Target{Type: "profit"}, nil)
 	writeJSON(w, http.StatusOK, s.d.Profit.Status())
 	return nil
 }
@@ -456,6 +535,7 @@ func (s *Server) profitHome(w http.ResponseWriter, r *http.Request) error {
 	if err := s.d.Pools.SetProfitHome(*body.Pool); err != nil {
 		return err
 	}
+	s.audit(r, "profit.home", audit.Target{Type: "pool", ID: *body.Pool}, nil)
 	writeJSON(w, http.StatusOK, s.d.Profit.Status())
 	return nil
 }
@@ -494,6 +574,7 @@ func (s *Server) timedStart(w http.ResponseWriter, r *http.Request) error {
 	case err != nil:
 		return err
 	}
+	s.audit(r, "timed.start", audit.Target{Type: "timed"}, nil)
 	writeJSON(w, http.StatusOK, s.d.Timed.Status())
 	return nil
 }
@@ -600,6 +681,7 @@ func (s *Server) createPool(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.audit(r, "pool.create", audit.Target{Type: "pool", ID: p.ID, Name: p.Name}, map[string]any{"coin": p.Coin})
 	writeJSON(w, http.StatusCreated, s.onePool(p.ID))
 	return nil
 }
@@ -615,6 +697,10 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// The pool password is never written to the audit log: only the fact that
+	// it was set.
+	s.audit(r, "pool.update", audit.Target{Type: "pool", ID: p.ID, Name: p.Name},
+		map[string]any{"reconnect": reconnect, "password_changed": in.Password != nil})
 	writeJSON(w, http.StatusOK, map[string]any{"pool": s.onePool(p.ID), "reconnecting": n})
 	return nil
 }
@@ -624,6 +710,7 @@ func (s *Server) deletePool(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.audit(r, "pool.delete", audit.Target{Type: "pool", ID: r.PathValue("id")}, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "reconnecting": n})
 	return nil
 }
@@ -688,6 +775,7 @@ func (s *Server) activatePool(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.audit(r, "pool.activate", audit.Target{Type: "pool", ID: r.PathValue("id")}, map[string]any{"force": force})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "reconnecting": n, "window": settings.FormatDuration(s.d.Settings.Get().SwitchDrain)})
 	return nil
 }
@@ -707,6 +795,7 @@ func (s *Server) setFallback(w http.ResponseWriter, r *http.Request) error {
 	if err := s.d.Pools.SetFallback(*body.Pools); err != nil {
 		return err
 	}
+	s.audit(r, "pool.fallback", audit.Target{Type: "pool"}, map[string]any{"pools": *body.Pools})
 	writeJSON(w, http.StatusOK, map[string]any{"pools": s.poolViews()})
 	return nil
 }
@@ -839,6 +928,8 @@ func (s *Server) telegramToken(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return apierr.Internal(apierr.M("state_save_failed", "cannot save state.json: {error}", "error", err.Error()))
 	}
+	// Only the fact is recorded, never the token.
+	s.audit(r, "telegram.token", audit.Target{Type: "telegram"}, map[string]any{"set": token != ""})
 	if token == "" {
 		s.d.Events.Info("telegram_token", "Telegram bot token removed: alerts go to the events only")
 	} else {
@@ -911,6 +1002,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) error {
 	suggest := false
 	for _, c := range pending.Changes {
 		s.d.Events.Info("settings_changed", "settings changed: %s %s → %s", c.Key, c.Old, c.New)
+		s.audit(r, "settings.update", audit.Target{Type: "setting", ID: c.Key}, map[string]any{"old": c.Old, "new": c.New})
 		changes = append(changes, changeView{Key: c.Key, Old: c.Old, New: c.New, Applies: c.Applies})
 		if c.Applies == settings.AppliesNewConnections {
 			suggest = true

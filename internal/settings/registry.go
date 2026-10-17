@@ -53,6 +53,7 @@ type Values struct {
 	HistoryDetail         time.Duration
 	HistoryRetention      time.Duration
 	HistoryMiners         time.Duration
+	AuditRetention        time.Duration
 	ProfitSwitch          string
 	ProfitInterval        time.Duration
 	ProfitMargin          int
@@ -358,6 +359,14 @@ var Defs = []Def{
 		Default: 90 * day, Min: 7 * day, Max: 3650 * day,
 		Applies: AppliesImmediately,
 	}, dur(func(v *Values) *time.Duration { return &v.HistoryMiners })),
+
+	// The audit log is kept apart from the charts: it answers "who did what",
+	// and a year is the default so a dispute can still be looked into.
+	def(Def{
+		Key: "audit_retention", Group: "logging", Type: TypeDuration,
+		Default: 365 * day, Min: 30 * day, Max: 3650 * day,
+		Applies: AppliesImmediately,
+	}, dur(func(v *Values) *time.Duration { return &v.AuditRetention })),
 
 	def(Def{
 		Key: "log_level", Group: "logging", Type: TypeEnum,

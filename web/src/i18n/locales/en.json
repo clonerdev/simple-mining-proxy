@@ -358,6 +358,10 @@
         "title": "Miner history",
         "desc": "How long the hourly statistics of every miner (hashrate, shares, time online) are kept. The detailed history also has ten-minute points. Grows with the farm: about 1.3 KB a day per miner hourly and 8 KB detailed."
       },
+      "audit_retention": {
+        "title": "Audit log retention",
+        "desc": "How long the audit log (who changed what, sign-ins, device decisions) is kept. Entries older than this are deleted together with their monthly file. A year or more is recommended: disputes are looked into with this log."
+      },
       "timed_switch": {
         "title": "Timed switching",
         "desc": "At the start of every period the farm moves to the pool marked “Switch to this pool on the timer” in the pool editor, for example a solo pool, and after the set time returns to the pool and fallback order it had before. Every switch reconnects all miners within the reconnect window. If the timer pool fails its check, the farm stays where it is until the next period. A pool chosen by hand during that time stays.",
@@ -550,7 +554,30 @@
     "profit_home_not_taking_part": "Pool {{pool}} does not take part in profit switching: tick it in the pool editor first",
     "profit_home_required": "Choose a pool, or none",
     "setting_return_above_margin": "must not be more than the switching margin ({{margin}}%)",
-    "telegram_token_env": "The bot token is set by TELEGRAM_BOT_TOKEN: change it in the environment and restart the container"
+    "telegram_token_env": "The bot token is set by TELEGRAM_BOT_TOKEN: change it in the environment and restart the container",
+    "forbidden": "Your account is not allowed to do this",
+    "accounts_unavailable": "Accounts are not available on this server",
+    "account_invalid": "Some account fields are invalid",
+    "account_not_found": "Account not found",
+    "account_self_edit": "You cannot change your own role, permissions or status",
+    "account_self_delete": "You cannot delete your own account",
+    "password_env": "This administrator's password is set by ADMIN_PASSWORD in the environment",
+    "escalation": "You cannot give an account more access than you have",
+    "account_password_current": "The current password is wrong",
+    "account_username_invalid": "3–32 characters: lowercase Latin letters, digits, “.”, “_”, “-”; starts with a letter or digit",
+    "account_username_taken": "This username is already taken",
+    "account_password_short": "At least {{min}} characters",
+    "account_password_long": "At most {{max}} characters",
+    "account_password_username": "The password must not be the username",
+    "account_password_weak": "The password is too simple",
+    "account_role_unknown": "Unknown role",
+    "account_display_name_long": "At most {{max}} characters",
+    "account_language_unknown": "Unknown language",
+    "account_customer_required": "A customer account needs a customer record",
+    "account_customer_staff_only": "Only customer accounts are linked to a customer",
+    "account_permission_unknown": "Unknown permission: {{permission}}",
+    "account_permissions_many": "At most {{max}} permissions",
+    "account_users_many": "At most {{max}} accounts"
   },
   "stats": {
     "title": "Charts",
