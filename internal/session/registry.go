@@ -211,3 +211,54 @@ func (r *Registry) CloseAll(reason string) {
 		s.Close(reason)
 	}
 }
+
+// ---- device control ----
+
+// CloseDevice closes every session authorized as the device at once. Other
+// devices of the same customer are not touched.
+func (r *Registry) CloseDevice(deviceID, reason string) int {
+	n := 0
+	for _, s := range r.List() {
+		if s.hasDevice(deviceID) {
+			s.Close(reason)
+			n++
+		}
+	}
+	return n
+}
+
+// CloseCustomer closes every session of the customer at once.
+func (r *Registry) CloseCustomer(customerID, reason string) int {
+	n := 0
+	for _, s := range r.List() {
+		if s.hasCustomer(customerID) {
+			s.Close(reason)
+			n++
+		}
+	}
+	return n
+}
+
+// LiveCustomer counts the live sessions of a customer, not counting the ones
+// of the device except (those are replaced when it reconnects).
+func (r *Registry) LiveCustomer(customerID, exceptDeviceID string) int {
+	return r.CountWhere(func(s *Session) bool {
+		return s.hasCustomer(customerID) && (exceptDeviceID == "" || !s.hasDevice(exceptDeviceID))
+	})
+}
+
+// trimDevice keeps the newest max sessions of a device, which includes keep,
+// and closes the older ones.
+func (r *Registry) trimDevice(deviceID string, max int, keep *Session) {
+	var mine []*Session
+	for _, s := range r.List() { // ordered by id: oldest first
+		if s.hasDevice(deviceID) {
+			mine = append(mine, s)
+		}
+	}
+	for i := 0; i < len(mine)-max; i++ {
+		if mine[i] != keep {
+			mine[i].Close("replaced by a newer connection of the same device")
+		}
+	}
+}

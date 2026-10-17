@@ -30,7 +30,7 @@ const (
 )
 
 // Groups lists the setting groups in display order.
-var Groups = []string{"logins", "switching", "profit", "timed", "hunt", "alerts", "timeouts", "limits", "tls", "history", "logging"}
+var Groups = []string{"logins", "switching", "profit", "timed", "hunt", "devices", "alerts", "timeouts", "limits", "tls", "history", "logging"}
 
 // Values is an immutable snapshot of all runtime settings.
 type Values struct {
@@ -62,6 +62,9 @@ type Values struct {
 	TimedPeriod           time.Duration
 	TimedDuration         time.Duration
 	HuntSwitch            string
+	DeviceControl         string
+	DeviceAuthTimeout     time.Duration
+	DevicePendingLimit    int
 	OfflineAfter          time.Duration
 	TelegramChats         string
 	TelegramLanguage      string
@@ -87,7 +90,16 @@ const (
 	HuntOn  = "on"
 )
 
+// Device control modes.
+const (
+	DeviceControlOff = "off"
+	DeviceControlOn  = "on"
+)
+
 func (v *Values) MaxLineBytes() int { return v.MaxLineKiB * 1024 }
+
+// DeviceControlEnabled reports whether device control is switched on.
+func (v *Values) DeviceControlEnabled() bool { return v.DeviceControl == DeviceControlOn }
 
 // Def describes one setting.
 type Def struct {
@@ -240,6 +252,30 @@ var Defs = []Def{
 		Default: HuntOff, Options: []string{HuntOff, HuntOn},
 		Applies: AppliesImmediately,
 	}, str(func(v *Values) *string { return &v.HuntSwitch })),
+
+	// Device control: with it on, only the customers and approved devices
+	// of the devices module may mine. Off keeps the proxy open as before.
+	def(Def{
+		Key: "device_control", Group: "devices", Type: TypeEnum,
+		Default: DeviceControlOff, Options: []string{DeviceControlOff, DeviceControlOn},
+		Applies: AppliesImmediately,
+	}, str(func(v *Values) *string { return &v.DeviceControl })),
+
+	// How long a connection may stay without a login the device control
+	// allowed before it is closed.
+	def(Def{
+		Key: "device_auth_timeout", Group: "devices", Type: TypeDuration,
+		Default: 30 * sec, Min: 5 * sec, Max: 5 * minute,
+		Applies: AppliesNewConnections,
+	}, dur(func(v *Values) *time.Duration { return &v.DeviceAuthTimeout })),
+
+	// A customer may have this many devices waiting for approval; more
+	// logins of unknown workers are refused without a record being made.
+	def(Def{
+		Key: "device_pending_limit", Group: "devices", Type: TypeInt,
+		Default: 10, Min: 1, Max: 100,
+		Applies: AppliesImmediately,
+	}, num(func(v *Values) *int { return &v.DevicePendingLimit })),
 
 	// An ASIC that has sent no shares for this long is offline. ASICs that
 	// share rarely get a longer wait, see the monitor package.

@@ -24,9 +24,25 @@ func Worker(login string) string {
 	return "default"
 }
 
+// Vars are the values a pool template can use besides the ASIC's own login:
+// the customer's pool account and the worker name made for the pool. They come
+// from device control and are empty without it.
+type Vars struct {
+	Account string // {account}
+	Worker  string // {upstream_worker}
+}
+
 // RewriteLogin maps an ASIC login and password to one pool account.
 func RewriteLogin(login, asicPassword, userTemplate, poolPassword string) Rewrite {
-	user := strings.NewReplacer("{worker}", Worker(login), "{login}", login).Replace(userTemplate)
+	return RewriteWith(login, asicPassword, userTemplate, poolPassword, Vars{})
+}
+
+// RewriteWith is RewriteLogin with the values of device control as well.
+func RewriteWith(login, asicPassword, userTemplate, poolPassword string, v Vars) Rewrite {
+	user := strings.NewReplacer(
+		"{worker}", Worker(login), "{login}", login,
+		"{account}", v.Account, "{upstream_worker}", v.Worker,
+	).Replace(userTemplate)
 	pass := strings.ReplaceAll(poolPassword, "{password}", asicPassword)
 	return Rewrite{User: user, Password: pass}
 }

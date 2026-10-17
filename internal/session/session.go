@@ -109,6 +109,11 @@ type Session struct {
 	pendingSubmit map[string]submitInfo
 	lastSweep     time.Time
 
+	// authorized holds the logins the Gate allowed (login -> device), and
+	// devices the devices among them. Both stay empty without device control.
+	authorized map[string]authz
+	devices    map[string]struct{}
+
 	// maxLine is max_line_bytes captured at connect time, like the line
 	// readers, so one session never mixes two limits.
 	maxLine int
@@ -161,6 +166,8 @@ type Info struct {
 	LastSubmit   *time.Time `json:"last_submit"`
 	HashrateHs   float64    `json:"hashrate_hs"`
 	ConnectedAt  time.Time  `json:"connected_at"`
+	CustomerID   string     `json:"customer_id,omitempty"`
+	DeviceID     string     `json:"device_id,omitempty"`
 }
 
 func (s *Session) Info(now time.Time) Info {
@@ -170,6 +177,10 @@ func (s *Session) Info(now time.Time) Info {
 		ID: s.ID, Worker: s.worker, UpstreamUser: s.upstreamUser, IP: s.IP, Transport: s.Transport,
 		PoolID: s.up.PoolID, PoolName: s.up.PoolName, PoolAddr: s.up.Addr, UserAgent: s.userAgent, Difficulty: s.difficulty,
 		Accepted: s.accepted, Rejected: s.rejected, HashrateHs: s.rate.Hashrate(now), ConnectedAt: s.ConnectedAt,
+	}
+	for _, a := range s.authorized {
+		in.CustomerID, in.DeviceID = a.customerID, a.deviceID
+		break
 	}
 	if !s.lastShare.IsZero() {
 		t := s.lastShare
@@ -189,6 +200,8 @@ type Server struct {
 	Registry *Registry
 	Events   *events.Log
 	Stats    *stats.Collector
+	// Gate enforces device control; nil lets everybody in.
+	Gate Gate
 	// TLSConfig returns the config for a new TLS connection; nil when the
 	// TLS listener is off.
 	TLSConfig func() *tls.Config
@@ -259,6 +272,12 @@ func (srv *Server) Serve(ctx context.Context, conn net.Conn, isTLS bool, firstDo
 	done()
 	conn.SetDeadline(time.Time{})
 
+	gated := srv.Gate != nil && srv.Gate.Active()
+	if gated && !srv.Gate.AllowConnect(ip) {
+		log.Debug("connection refused by device control", "reason", "too many refused logins")
+		return
+	}
+
 	up, err := srv.Router.Pick(ctx)
 	if err != nil {
 		srv.Events.Throttled("no_pool", 30*time.Second, "no_pool", "no pool available, closing miner connections: %v", err)
@@ -277,6 +296,8 @@ func (srv *Server) Serve(ctx context.Context, conn net.Conn, isTLS bool, firstDo
 		logins:            map[string]string{},
 		pendingAuth:       map[string]authInfo{},
 		pendingSubmit:     map[string]submitInfo{},
+		authorized:        map[string]authz{},
+		devices:           map[string]struct{}{},
 		maxLine:           cfg.MaxLineBytes(),
 		lastMinerActivity: now,
 		lastPoolActivity:  now,
@@ -290,6 +311,11 @@ func (srv *Server) Serve(ctx context.Context, conn net.Conn, isTLS bool, firstDo
 	log = log.With("session", id, "pool", up.PoolID)
 	log.Debug("session started", "transport", transport)
 
+	if gated {
+		// A connection that does not get a login through the Gate in time is
+		// closed: an unknown client must not hold a pool connection open.
+		defer s.watchAuthorization(cfg.DeviceAuthTimeout)()
+	}
 	err = s.relay(first, msg, lr)
 	s.Close(closeReason(err))
 	s.mu.Lock()
@@ -313,8 +339,10 @@ func (s *Session) relay(first []byte, firstMsg *stratum.Message, minerReader *st
 	if err != nil {
 		return err
 	}
-	if err := writeLine(s.up.Conn, out); err != nil {
-		return fmt.Errorf("write to pool: %w", err)
+	if out != nil {
+		if err := writeLine(s.up.Conn, out); err != nil {
+			return fmt.Errorf("write to pool: %w", err)
+		}
 	}
 	errc := make(chan error, 2)
 	go func() { errc <- guard(func() error { return s.minerLoop(minerReader) }) }()
@@ -430,6 +458,9 @@ func (s *Session) minerLoop(lr *stratum.LineReader) error {
 		if err != nil {
 			return err
 		}
+		if out == nil { // answered here: the Gate refused it
+			continue
+		}
 		if err := writeLine(s.up.Conn, out); err != nil {
 			return fmt.Errorf("write to pool: %w", err)
 		}
@@ -504,8 +535,8 @@ func (s *Session) fromMiner(line []byte, msg *stratum.Message) ([]byte, error) {
 	return line, nil
 }
 
-func (s *Session) rewrite(login, asicPassword string) stratum.Rewrite {
-	return stratum.RewriteLogin(login, asicPassword, s.up.Template, s.up.Password)
+func (s *Session) rewrite(login, asicPassword string, vars stratum.Vars) stratum.Rewrite {
+	return stratum.RewriteWith(login, asicPassword, s.up.Template, s.up.Password, vars)
 }
 
 func (s *Session) authorize(line []byte, msg *stratum.Message) ([]byte, error) {
@@ -521,7 +552,33 @@ func (s *Session) authorize(line []byte, msg *stratum.Message) ([]byte, error) {
 		return nil, errLoginTooLong
 	}
 	asicPass, _ := stratum.StringAt(params, 1)
-	rw := s.rewrite(login, asicPass)
+	var vars stratum.Vars
+	var granted *authz
+	if s.gateActive() {
+		s.mu.Lock()
+		ua := s.userAgent
+		s.mu.Unlock()
+		dec := s.srv.Gate.Authorize(AuthRequest{SessionID: s.ID, IP: s.IP, Transport: s.Transport, Login: login, Password: asicPass, UserAgent: ua})
+		if dec.Allow && usesAccount(s.up.Template) && dec.Account == "" {
+			dec = AuthDecision{Code: "no_account", Reason: "No pool account is set for this customer"}
+		}
+		if !dec.Allow {
+			s.srv.Events.Throttled("denied:"+s.IP+":"+dec.Code, time.Minute, "login_refused",
+				"login refused for %s from %s: %s", truncateLogin(login), s.IP, dec.Code)
+			writeLine(s.miner, reply(msg.ID, false, dec.Reason))
+			return nil, &deniedError{code: dec.Code, reason: dec.Reason}
+		}
+		// The ASIC's password is the customer's connection key: it is never
+		// passed on to the pool.
+		asicPass = ""
+		vars = stratum.Vars{Account: dec.Account, Worker: dec.Worker}
+		granted = &authz{deviceID: dec.DeviceID, customerID: dec.CustomerID}
+		defer s.keepOnlyNewest(dec.DeviceID, dec.MaxConnections)
+	} else if usesAccount(s.up.Template) {
+		writeLine(s.miner, reply(msg.ID, false, "Pool account template needs device control"))
+		return nil, &deniedError{code: "no_account", reason: "pool account template needs device control"}
+	}
+	rw := s.rewrite(login, asicPass, vars)
 
 	now := time.Now()
 	s.mu.Lock()
@@ -535,6 +592,10 @@ func (s *Session) authorize(line []byte, msg *stratum.Message) ([]byte, error) {
 		}
 	}
 	s.worker, s.upstreamUser = login, rw.User
+	if granted != nil {
+		s.authorized[login] = *granted
+		s.devices[granted.deviceID] = struct{}{}
+	}
 	s.mu.Unlock()
 
 	params[0] = stratum.EncodeString(rw.User)
@@ -559,13 +620,29 @@ func (s *Session) submit(line []byte, msg *stratum.Message) ([]byte, error) {
 	}
 	now := time.Now()
 
+	if s.gateActive() {
+		// Device control: a share is forwarded only for a login the Gate
+		// allowed, and only while the device may still mine.
+		s.mu.Lock()
+		a, allowed := s.authorized[login]
+		s.mu.Unlock()
+		if !ok || !allowed {
+			writeLine(s.miner, reply(msg.ID, nil, "Unauthorized worker"))
+			return nil, nil
+		}
+		if good, why := s.srv.Gate.Usable(a.deviceID); !good {
+			writeLine(s.miner, reply(msg.ID, nil, "Unauthorized worker"))
+			return nil, &deniedError{code: why, reason: "device may no longer mine"}
+		}
+	}
+
 	s.mu.Lock()
 	s.lastSubmit = now
 	user := login
 	if ok {
 		var known bool
 		if user, known = s.logins[login]; !known {
-			user = s.rewrite(login, "").User
+			user = s.rewrite(login, "", stratum.Vars{}).User
 			if len(s.logins) < maxTrackedLogin {
 				s.logins[login] = user
 			}
