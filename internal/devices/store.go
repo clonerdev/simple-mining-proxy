@@ -679,7 +679,7 @@ func (s *Store) NoteSeen(deviceID, userAgent, ip string, denied bool) {
 		t.denied++
 	}
 	s.touches[deviceID] = t
-	s.devs[deviceID] = applyTouch(d, touch{seen: t.seen, ua: userAgent, ip: ip, denied: boolInt(denied)})
+	s.devs[deviceID] = applyTouch(d, touch{seen: t.seen, ua: clip(userAgent, 128), ip: ip, denied: boolInt(denied)})
 }
 
 func boolInt(b bool) int {

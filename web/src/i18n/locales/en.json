@@ -249,7 +249,8 @@
       "history": "History and charts",
       "logging": "Logging",
       "alerts": "Monitoring and alerts",
-      "hunt": "eCash block hunting (XEC)"
+      "hunt": "eCash block hunting (XEC)",
+      "devices": "Device control"
     },
     "appliesTo": {
       "immediately": "immediately",
@@ -407,6 +408,22 @@
         "title": "Return margin",
         "desc": "With a main pool chosen below: once the coin the farm moved to earns less than this much more than the main pool's coin, the farm goes back to the main pool and stays there until another coin is ahead by the switching margin again. The gap between the two margins keeps the farm from bouncing between coins on small changes.",
         "note": "not more than “Switching margin”"
+      },
+      "device_control": {
+        "title": "Device control",
+        "desc": "On: only the customers and devices of the Customers section may mine. An unknown worker is recorded as pending and mines only after an administrator approves it; suspended, blocked and revoked devices are refused and cut off at once. Off: the proxy accepts any miner, as before.",
+        "options": {
+          "off": "Off",
+          "on": "On"
+        }
+      },
+      "device_auth_timeout": {
+        "title": "Login timeout",
+        "desc": "How long a connection may stay open without a login that device control accepted. Connections that only subscribe and never log in are closed after this time."
+      },
+      "device_pending_limit": {
+        "title": "Devices awaiting approval per customer",
+        "desc": "A customer may have this many devices waiting for approval. Logins of further unknown workers are refused and no record is made, so a leaked key cannot fill the list."
       }
     },
     "server": {
