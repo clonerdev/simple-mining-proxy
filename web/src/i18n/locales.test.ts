@@ -91,6 +91,15 @@ describe('server keys', () => {
     }
   })
 
+  it('translate every device problem', () => {
+    const source = readFileSync(join(root, 'devices/messages.go'), 'utf8')
+    const keys = [...source.matchAll(/^\t"([a-z_]+)":/gm)].map((m) => m[1])
+    expect(keys.length).toBeGreaterThan(10)
+    for (const key of keys) {
+      expect(enKeys.has(`errors.device_${key}`), `errors.device_${key}`).toBe(true)
+    }
+  })
+
   it('describe every setting and group', () => {
     const registry = readFileSync(join(root, 'settings/registry.go'), 'utf8')
     const settingKeys = [...registry.matchAll(/Key: "([a-z_]+)"/g)].map((m) => m[1])

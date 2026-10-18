@@ -21,6 +21,7 @@ import (
 	"github.com/famfamfam/simple-mining-proxy/internal/admin"
 	"github.com/famfamfam/simple-mining-proxy/internal/audit"
 	"github.com/famfamfam/simple-mining-proxy/internal/config"
+	"github.com/famfamfam/simple-mining-proxy/internal/devices"
 	"github.com/famfamfam/simple-mining-proxy/internal/events"
 	"github.com/famfamfam/simple-mining-proxy/internal/history"
 	"github.com/famfamfam/simple-mining-proxy/internal/listener"
@@ -126,6 +127,22 @@ func run() error {
 	}
 	aud.Prune(set.Get().AuditRetention)
 	set.OnChange(func(v *settings.Values) { go aud.Prune(v.AuditRetention) })
+
+	// Customers and their devices. The gate is consulted by every Stratum
+	// session; it lets everybody in until "device_control" is switched on in
+	// Settings, which is how the proxy behaved before device control existed.
+	dev, err := devices.Open(filepath.Join(cfg.DataDir, "devices.json"))
+	if err != nil {
+		return fmt.Errorf("devices: %w", err)
+	}
+	enforce := &devices.Enforcement{Store: dev, Registry: reg, Audit: aud, Events: ev}
+	enforce.Install()
+	srv.Gate = devices.NewGate(devices.GateConfig{
+		Store:        dev,
+		Enabled:      func() bool { return set.Get().DeviceControlEnabled() },
+		PendingLimit: func() int { return set.Get().DevicePendingLimit },
+		Live:         reg.LiveCustomer,
+	})
 
 	hist, err := history.New(filepath.Join(cfg.DataDir, "history"),
 		func() history.Sample {
@@ -233,7 +250,7 @@ func run() error {
 	httpSrv := &http.Server{
 		Handler: admin.New(admin.Deps{
 			Config: cfg, State: st, Settings: set, Pools: mgr, Registry: reg,
-			Stats: collector, History: hist, Profit: profitSw, Timed: timedSw, RTT: watcher, Telegram: bot, Accounts: acc, Audit: aud,
+			Stats: collector, History: hist, Profit: profitSw, Timed: timedSw, RTT: watcher, Telegram: bot, Accounts: acc, Audit: aud, Devices: dev,
 			Events: ev, Certs: certs, Started: started,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -280,6 +297,9 @@ func run() error {
 	monDone := make(chan struct{})
 	go func() { mon.Run(ctx); close(monDone) }()
 	go bot.Run(ctx)
+	devDone := make(chan struct{})
+	go func() { dev.Run(ctx); close(devDone) }()
+	go enforce.Run(ctx)
 	httpErr := make(chan error, 1)
 	go func() {
 		slog.Info("admin UI listening", "addr", adminLn.Addr().String())
@@ -312,7 +332,7 @@ func run() error {
 	}
 	// The history writes the unfinished minute and the monitor the last
 	// shares when ctx is done.
-	for _, done := range []chan struct{}{histDone, monDone} {
+	for _, done := range []chan struct{}{histDone, monDone, devDone} {
 		select {
 		case <-done:
 		case <-shCtx.Done():

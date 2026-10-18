@@ -20,6 +20,7 @@ import (
 	"github.com/famfamfam/simple-mining-proxy/internal/apierr"
 	"github.com/famfamfam/simple-mining-proxy/internal/audit"
 	"github.com/famfamfam/simple-mining-proxy/internal/config"
+	"github.com/famfamfam/simple-mining-proxy/internal/devices"
 	"github.com/famfamfam/simple-mining-proxy/internal/events"
 	"github.com/famfamfam/simple-mining-proxy/internal/history"
 	"github.com/famfamfam/simple-mining-proxy/internal/pool"
@@ -55,6 +56,9 @@ type Deps struct {
 	// new data directory layout).
 	Accounts *accounts.Store
 	Audit    *audit.Log
+	// Devices is the customers and devices store; nil leaves the device
+	// endpoints answering "not available".
+	Devices *devices.Store
 }
 
 type Server struct {
@@ -88,6 +92,9 @@ func New(d Deps) http.Handler {
 		setEdit  = accounts.SettingsEdit
 		users    = accounts.UsersManage
 		auditing = accounts.AuditView
+		devView  = accounts.DevicesView
+		devEdit  = accounts.DevicesManage
+		self     = accounts.SelfView
 	)
 	api("GET /api/auth/me", any_, s.me)
 	api("POST /api/auth/password", any_, s.changeOwnPassword)
@@ -123,6 +130,18 @@ func New(d Deps) http.Handler {
 	api("DELETE /api/users/{id}", users, s.deleteUser)
 	api("POST /api/users/{id}/password", users, s.resetUserPassword)
 	api("GET /api/audit", auditing, s.auditLog)
+	api("GET /api/customers", devView, s.listCustomers)
+	api("POST /api/customers", devEdit, s.createCustomer)
+	api("GET /api/customers/{id}", devView, s.getCustomer)
+	api("PUT /api/customers/{id}", devEdit, s.updateCustomer)
+	api("POST /api/customers/{id}/status", devEdit, s.setCustomerStatus)
+	api("POST /api/customers/{id}/key", devEdit, s.rotateCustomerKey)
+	api("DELETE /api/customers/{id}", devEdit, s.deleteCustomer)
+	api("GET /api/devices", devView, s.listDevices)
+	api("POST /api/devices/{id}/action", devEdit, s.actOnDevice)
+	api("PUT /api/devices/{id}", devEdit, s.updateDevice)
+	api("DELETE /api/devices/{id}", devEdit, s.deleteDevice)
+	api("GET /api/self", self, s.selfView)
 	unknownAPI := func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, apierr.NotFound(apierr.M("api_not_found", "unknown API endpoint")))
 	}

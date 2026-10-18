@@ -158,7 +158,21 @@ type proxy struct {
 	set    *settings.Store
 }
 
+// proxyOpts tunes startProxyWith. The zero value is what startProxy uses.
+type proxyOpts struct {
+	// template is the pool username template; the default is
+	// "account<A,B,..>.{worker}", one account per pool.
+	template string
+	// gate makes the Stratum gate (device control); nil is none.
+	gate func(reg *session.Registry, ev *events.Log, set *settings.Store) session.Gate
+}
+
 func startProxy(t *testing.T, pools ...*fakePool) *proxy {
+	t.Helper()
+	return startProxyWith(t, proxyOpts{}, pools...)
+}
+
+func startProxyWith(t *testing.T, o proxyOpts, pools ...*fakePool) *proxy {
 	t.Helper()
 	st, err := state.Open(filepath.Join(t.TempDir(), "state.json"))
 	if err != nil {
@@ -178,12 +192,18 @@ func startProxy(t *testing.T, pools ...*fakePool) *proxy {
 	for i, fp := range pools {
 		name := fmt.Sprintf("Pool %c", 'A'+i)
 		acc := fmt.Sprintf("account%c.{worker}", 'A'+i)
+		if o.template != "" {
+			acc = o.template
+		}
 		host, port, tls := "127.0.0.1", fp.port(), false
 		if _, err := mgr.Create(pool.Input{Name: &name, Host: &host, Port: &port, TLS: &tls, Username: &acc}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	srv := &session.Server{Settings: set, Router: mgr, Registry: reg, Events: ev, Stats: col}
+	if o.gate != nil {
+		srv.Gate = o.gate(reg, ev, set)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	l := &listener.Listener{Name: "tcp", Addr: "127.0.0.1:0", Server: srv, Limits: listener.NewLimits(set, ev)}
 	if err := l.Listen(ctx); err != nil {
