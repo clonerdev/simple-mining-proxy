@@ -185,7 +185,7 @@ func (e *Enforcement) log(ev Event, cut int) {
 		e.Events.Info("device_state", "device %s: %s → %s (%s)%s", who, ev.From, ev.To, ev.Type, closedNote(cut))
 	case EvCustomerStatus:
 		e.Events.Info("customer_state", "customer %s: %s → %s%s", ev.CustomerSlug, ev.From, ev.To, closedNote(cut))
-	case EvCustomerCreated, EvCustomerDeleted, EvCustomerKey, EvDeviceDeleted:
+	case EvCustomerCreated, EvCustomerDeleted, EvCustomerKey, EvDeviceDeleted, EvCustomerConsent:
 		e.Events.Info("customer_change", "%s: %s", ev.Type, who)
 	}
 }

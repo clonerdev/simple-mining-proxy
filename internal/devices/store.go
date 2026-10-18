@@ -521,6 +521,47 @@ func (s *Store) SetCustomerStatus(id string, status CustomerStatus, reason strin
 	return after, nil
 }
 
+// Consented reports whether the customer agreed to the operator's share of
+// their mining. It is asked on every share, so it only reads an index.
+func (s *Store) Consented(customerID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	c, ok := s.custs[customerID]
+	return ok && c.FeeConsent != nil
+}
+
+// SetFeeConsent records (grant) or withdraws the customer's consent to the
+// operator's share. Withdrawing stops the share at once; the record of the
+// earlier consent stays in the audit log.
+func (s *Store) SetFeeConsent(id string, grant bool, terms, note string, by audit.Actor) (Customer, error) {
+	terms, note = clip(strings.TrimSpace(terms), 200), clip(strings.TrimSpace(note), 500)
+	before, after, err := s.mutateCustomer(id, func(c *Customer) *Error {
+		if grant {
+			c.FeeConsent = &FeeConsent{At: s.now().UTC(), By: actorName(by), Terms: terms, Note: note}
+		} else {
+			c.FeeConsent = nil
+		}
+		return nil
+	})
+	if err != nil {
+		return Customer{}, err
+	}
+	from, to := "revoked", "granted"
+	if before.FeeConsent != nil {
+		from = "granted"
+	}
+	if !grant {
+		to = "revoked"
+	}
+	details := map[string]any{}
+	if terms != "" {
+		details["terms"] = terms
+	}
+	s.emit(Event{Type: EvCustomerConsent, Actor: by, CustomerID: after.ID, CustomerSlug: after.Slug, CustomerName: after.Name,
+		From: from, To: to, Reason: note, Details: details})
+	return after, nil
+}
+
 // RotateKey makes a new connection key; the old one stops working at once.
 // The new key is returned once and not kept.
 func (s *Store) RotateKey(id string, by audit.Actor) (string, error) {

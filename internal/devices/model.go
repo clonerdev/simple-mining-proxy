@@ -128,6 +128,11 @@ type Customer struct {
 	Language string `json:"language,omitempty"`
 	Notes    string `json:"notes,omitempty"`
 
+	// FeeConsent records that the customer agreed to the operator's share of
+	// their mining. Without it the share is never taken, whatever the rules
+	// say: the Stratum side checks it on every share.
+	FeeConsent *FeeConsent `json:"fee_consent,omitempty"`
+
 	// KeySalt and KeyHash check the connection key; the key itself is shown
 	// once, when it is made, and is not kept.
 	KeySalt      string    `json:"key_salt"`
@@ -136,6 +141,20 @@ type Customer struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// FeeConsent is the customer's agreement to the operator's share of their
+// mining. It can be given by the customer in their own panel or recorded by an
+// administrator who holds the signed agreement; either way it says who did it.
+type FeeConsent struct {
+	At time.Time `json:"at"`
+	// By is the account that recorded it: the customer's own user or an
+	// administrator.
+	By string `json:"by"`
+	// Terms names the version or the text of the terms agreed to; Note is free
+	// text, for example where the signed agreement is kept.
+	Terms string `json:"terms,omitempty"`
+	Note  string `json:"note,omitempty"`
 }
 
 // Change is one step in the life of a device.

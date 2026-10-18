@@ -12,6 +12,7 @@ const (
 	EvCustomerUpdated  = "customer.update"
 	EvCustomerStatus   = "customer.status"
 	EvCustomerKey      = "customer.key_rotate"
+	EvCustomerConsent  = "customer.fee_consent" // To is "granted" or "revoked"
 	EvCustomerDeleted  = "customer.delete"
 	EvDevicePending    = "device.pending"
 	EvDeviceUpdated    = "device.update"

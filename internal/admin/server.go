@@ -94,6 +94,7 @@ func New(d Deps) http.Handler {
 		auditing = accounts.AuditView
 		devView  = accounts.DevicesView
 		devEdit  = accounts.DevicesManage
+		billEdit = accounts.BillingManage
 		self     = accounts.SelfView
 	)
 	api("GET /api/auth/me", any_, s.me)
@@ -136,12 +137,14 @@ func New(d Deps) http.Handler {
 	api("PUT /api/customers/{id}", devEdit, s.updateCustomer)
 	api("POST /api/customers/{id}/status", devEdit, s.setCustomerStatus)
 	api("POST /api/customers/{id}/key", devEdit, s.rotateCustomerKey)
+	api("POST /api/customers/{id}/fee-consent", billEdit, s.feeConsent)
 	api("DELETE /api/customers/{id}", devEdit, s.deleteCustomer)
 	api("GET /api/devices", devView, s.listDevices)
 	api("POST /api/devices/{id}/action", devEdit, s.actOnDevice)
 	api("PUT /api/devices/{id}", devEdit, s.updateDevice)
 	api("DELETE /api/devices/{id}", devEdit, s.deleteDevice)
 	api("GET /api/self", self, s.selfView)
+	api("POST /api/self/fee-consent", self, s.selfFeeConsent)
 	unknownAPI := func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, apierr.NotFound(apierr.M("api_not_found", "unknown API endpoint")))
 	}

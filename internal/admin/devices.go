@@ -96,6 +96,7 @@ type customerView struct {
 	ExpiresAt      *time.Time                   `json:"expires_at,omitempty"`
 	Language       string                       `json:"language,omitempty"`
 	Notes          string                       `json:"notes,omitempty"`
+	FeeConsent     *devices.FeeConsent          `json:"fee_consent,omitempty"`
 	KeyRotatedAt   time.Time                    `json:"key_rotated_at"`
 	CreatedAt      time.Time                    `json:"created_at"`
 	UpdatedAt      time.Time                    `json:"updated_at"`
@@ -116,7 +117,7 @@ func (s *Server) customerViewOf(c devices.Customer, devs []devices.Device, lv ma
 	v := customerView{
 		ID: c.ID, Slug: c.Slug, Name: c.Name, Status: c.Status, StatusReason: c.StatusReason, StatusAt: timePtr(c.StatusAt),
 		Account: c.Account, MaxDevices: c.MaxDevices, MaxConnections: c.MaxConnections, ExpiresAt: c.ExpiresAt,
-		Language: c.Language, KeyRotatedAt: c.KeyRotatedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		Language: c.Language, FeeConsent: c.FeeConsent, KeyRotatedAt: c.KeyRotatedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 		Devices: map[devices.DeviceStatus]int{},
 	}
 	if staff {
@@ -303,6 +304,51 @@ func (s *Server) setCustomerStatus(w http.ResponseWriter, r *http.Request) error
 	}
 	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
 	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv, true))
+	return nil
+}
+
+// feeConsent records or withdraws the customer's consent to the operator's
+// share. An administrator records it for a customer who signed an agreement;
+// the customer does the same for themself in their own panel (selfFeeConsent).
+func (s *Server) feeConsent(w http.ResponseWriter, r *http.Request) error {
+	if s.d.Devices == nil {
+		return errNoDevices
+	}
+	var in struct {
+		Grant bool   `json:"grant"`
+		Terms string `json:"terms"`
+		Note  string `json:"note"`
+	}
+	if err := decode(r, &in); err != nil {
+		return err
+	}
+	c, err := s.d.Devices.SetFeeConsent(r.PathValue("id"), in.Grant, in.Terms, in.Note, principalOf(r).actor(clientIP(r)))
+	if err != nil {
+		return devicesErr(err)
+	}
+	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
+	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv, true))
+	return nil
+}
+
+func (s *Server) selfFeeConsent(w http.ResponseWriter, r *http.Request) error {
+	c, err := s.selfCustomer(r)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Grant bool   `json:"grant"`
+		Terms string `json:"terms"`
+	}
+	if err := decode(r, &in); err != nil {
+		return err
+	}
+	c, err = s.d.Devices.SetFeeConsent(c.ID, in.Grant, in.Terms, "", principalOf(r).actor(clientIP(r)))
+	if err != nil {
+		return devicesErr(err)
+	}
+	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
+	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv, false))
 	return nil
 }
 

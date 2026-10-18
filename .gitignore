@@ -14,3 +14,6 @@
 /web/node_modules/
 /web/dist/*
 !/web/dist/robots.txt
+
+# Local agent worktrees and settings
+.claude/
