@@ -61,6 +61,15 @@ type Pool struct {
 	// moved to earns less than profit_return_margin more. At most one pool
 	// has it, and only one that takes part in profit switching.
 	ProfitHome bool `json:"profit_home,omitempty"`
+	// OperatorShare says the pool accepts a second, operator, worker on the
+	// connection of a customer's ASIC and credits its shares to it. Off unless
+	// the operator has checked the pool's terms and switched it on: the share
+	// is never tried on a pool that was not marked.
+	OperatorShare bool `json:"operator_share,omitempty"`
+	// OperatorUser and OperatorPassword are the operator's own login on this
+	// pool, the one the operator's windows are credited to.
+	OperatorUser     string `json:"operator_user,omitempty"`
+	OperatorPassword string `json:"operator_password,omitempty"`
 }
 
 // UnmarshalJSON also reads the version-1 form with a single host and port.

@@ -390,3 +390,18 @@ func TestConcurrentNotesAreSafe(t *testing.T) {
 		t.Fatalf("lost or doubled counts under concurrency: %+v", rows)
 	}
 }
+
+func TestFlatRulesFollowTheSettingsLive(t *testing.T) {
+	f := 0.02
+	r := FlatRules{Fraction: func() float64 { return f }}
+	if d := r.Share(Subject{CustomerID: "c"}, time.Now()); d.Fraction != 0.02 || d.RuleID != "global" {
+		t.Fatalf("got %+v", d)
+	}
+	f = 0
+	if d := r.Share(Subject{}, time.Now()); d.Fraction != 0 {
+		t.Fatalf("a zero setting must give no share, got %+v", d)
+	}
+	if d := (FlatRules{}).Share(Subject{}, time.Now()); d.Fraction != 0 {
+		t.Fatalf("no source must give no share, got %+v", d)
+	}
+}

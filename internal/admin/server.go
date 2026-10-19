@@ -616,6 +616,9 @@ type poolView struct {
 	TimedTarget      bool       `json:"timed_target"`
 	Solo             bool       `json:"solo"`
 	ProfitHome       bool       `json:"profit_home"`
+	OperatorShare    bool       `json:"operator_share"`
+	OperatorUser     string     `json:"operator_user,omitempty"`
+	OperatorPassSet  bool       `json:"operator_password_set"`
 	Role             string     `json:"role"`
 	FallbackPosition int        `json:"fallback_position,omitempty"`
 	Health           string     `json:"health"`
@@ -656,6 +659,7 @@ func (s *Server) poolView(p state.Pool, snap *pool.Snapshot, counts session.Coun
 	v := poolView{
 		ID: p.ID, Name: p.Name, Coin: p.Coin, TLS: p.TLS,
 		TLSSkipVerify: p.TLSSkipVerify, Username: p.Username, PasswordSet: p.Password != "", ProfitSwitch: p.ProfitSwitch, TimedTarget: p.TimedTarget, Solo: p.Solo, ProfitHome: p.ProfitHome,
+		OperatorShare: p.OperatorShare, OperatorUser: p.OperatorUser, OperatorPassSet: p.OperatorPassword != "",
 		Health: string(h.Status), Sessions: counts.ByPool[p.ID],
 		Accepted: st.ByPool[p.ID].Accepted, Rejected: st.ByPool[p.ID].Rejected,
 		HashrateTHs: st.PoolHashrateHs[p.ID] / 1e12,

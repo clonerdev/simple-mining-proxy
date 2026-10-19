@@ -30,7 +30,7 @@ const (
 )
 
 // Groups lists the setting groups in display order.
-var Groups = []string{"logins", "switching", "profit", "timed", "hunt", "devices", "alerts", "timeouts", "limits", "tls", "history", "logging"}
+var Groups = []string{"logins", "switching", "profit", "timed", "hunt", "devices", "opshare", "alerts", "timeouts", "limits", "tls", "history", "logging"}
 
 // Values is an immutable snapshot of all runtime settings.
 type Values struct {
@@ -63,6 +63,11 @@ type Values struct {
 	TimedDuration         time.Duration
 	HuntSwitch            string
 	DeviceControl         string
+	OperatorShare         string
+	OperatorShareKind     string
+	OperatorShareAmount   int
+	OperatorShareMaxPct   int
+	OperatorShareCycle    time.Duration
 	DeviceAuthTimeout     time.Duration
 	DevicePendingLimit    int
 	OfflineAfter          time.Duration
@@ -97,6 +102,25 @@ const (
 )
 
 func (v *Values) MaxLineBytes() int { return v.MaxLineKiB * 1024 }
+
+// Operator share switches and kinds.
+const (
+	OperatorShareOff = "off"
+	OperatorShareOn  = "on"
+	// The amount is a percent of the mining time ...
+	OperatorShareKindPercent = "percent"
+	// ... or minutes of mining per day, spread over the day's cycles.
+	OperatorShareKindMinutes = "minutes_per_day"
+)
+
+// OperatorShareFraction is the share of the mining time the settings give the
+// operator, from 0 to 1. One rule only: a percent or minutes per day, never both.
+func (v *Values) OperatorShareFraction() float64 {
+	if v.OperatorShareKind == OperatorShareKindMinutes {
+		return float64(v.OperatorShareAmount) / (24 * 60)
+	}
+	return float64(v.OperatorShareAmount) / 100
+}
 
 // DeviceControlEnabled reports whether device control is switched on.
 func (v *Values) DeviceControlEnabled() bool { return v.DeviceControl == DeviceControlOn }
@@ -260,6 +284,39 @@ var Defs = []Def{
 		Default: DeviceControlOff, Options: []string{DeviceControlOff, DeviceControlOn},
 		Applies: AppliesImmediately,
 	}, str(func(v *Values) *string { return &v.DeviceControl })),
+
+	// The operator's optional share of a customer's mining. Off by default; a
+	// customer's shares go to the operator only with this switched on, the
+	// pool marked as accepting a second worker and the customer's consent.
+	def(Def{
+		Key: "operator_share", Group: "opshare", Type: TypeEnum,
+		Default: OperatorShareOff, Options: []string{OperatorShareOff, OperatorShareOn},
+		Applies: AppliesImmediately,
+	}, str(func(v *Values) *string { return &v.OperatorShare })),
+
+	def(Def{
+		Key: "operator_share_kind", Group: "opshare", Type: TypeEnum,
+		Default: OperatorShareKindPercent, Options: []string{OperatorShareKindPercent, OperatorShareKindMinutes},
+		Applies: AppliesImmediately,
+	}, str(func(v *Values) *string { return &v.OperatorShareKind })),
+
+	def(Def{
+		Key: "operator_share_amount", Group: "opshare", Type: TypeInt,
+		Default: 2, Min: 0, Max: 144,
+		Applies: AppliesImmediately,
+	}, num(func(v *Values) *int { return &v.OperatorShareAmount })),
+
+	def(Def{
+		Key: "operator_share_max_percent", Group: "opshare", Type: TypeInt, Unit: "%",
+		Default: 10, Min: 1, Max: 50,
+		Applies: AppliesImmediately,
+	}, num(func(v *Values) *int { return &v.OperatorShareMaxPct })),
+
+	def(Def{
+		Key: "operator_share_cycle", Group: "opshare", Type: TypeDuration,
+		Default: 15 * minute, Min: 1 * minute, Max: time.Hour,
+		Applies: AppliesImmediately,
+	}, dur(func(v *Values) *time.Duration { return &v.OperatorShareCycle })),
 
 	// How long a connection may stay without a login the device control
 	// allowed before it is closed.

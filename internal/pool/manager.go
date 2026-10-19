@@ -159,6 +159,7 @@ func (m *Manager) Pick(ctx context.Context) (*session.Upstream, error) {
 			if err == nil {
 				return &session.Upstream{
 					Conn: conn, PoolID: p.ID, PoolName: p.Name, Addr: a.String(), Template: p.Username, Password: p.Password,
+					OperatorShare: p.OperatorShare, OperatorUser: p.OperatorUser, OperatorPassword: p.OperatorPassword,
 					OnFailure: func(kind session.UpstreamFailure, err error) { m.sessionFailure(p, a, kind, err) },
 				}, nil
 			}
@@ -429,6 +430,11 @@ type Input struct {
 	ProfitSwitch  *bool            `json:"profit_switch"`
 	TimedTarget   *bool            `json:"timed_target"`
 	Solo          *bool            `json:"solo"`
+	// OperatorShare marks a pool that credits a second worker on the same
+	// connection; OperatorUser and OperatorPassword are the operator's login there.
+	OperatorShare    *bool   `json:"operator_share"`
+	OperatorUser     *string `json:"operator_user"`
+	OperatorPassword *string `json:"operator_password"`
 }
 
 func apply(p *state.Pool, in Input) {
@@ -476,6 +482,16 @@ func apply(p *state.Pool, in Input) {
 	}
 	if in.Solo != nil {
 		p.Solo = *in.Solo
+	}
+	if in.OperatorShare != nil {
+		p.OperatorShare = *in.OperatorShare
+	}
+	set(&p.OperatorUser, in.OperatorUser)
+	if in.OperatorPassword != nil {
+		p.OperatorPassword = *in.OperatorPassword
+	}
+	if p.OperatorUser == "" {
+		p.OperatorShare = false // nothing to credit the share to
 	}
 	if !p.ProfitSwitch || p.Solo {
 		p.ProfitHome = false // the home of profit switching takes part in it
