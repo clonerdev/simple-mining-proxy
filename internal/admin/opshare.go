@@ -71,28 +71,3 @@ func (s *Server) operatorPools(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, http.StatusOK, map[string]any{"active": s.d.OperatorShare.Active(), "pools_off": off})
 	return nil
 }
-
-// selfOperatorUsage lets a customer see the account of the share taken from
-// their own devices, and nothing of anybody else's.
-func (s *Server) selfOperatorUsage(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.selfCustomer(r)
-	if err != nil {
-		return err
-	}
-	if s.d.OperatorShare == nil {
-		return errNoOperatorShare
-	}
-	from, to, err := usageRange(r, time.Now())
-	if err != nil {
-		return err
-	}
-	rows := s.d.OperatorShare.Usage(from, to, c.ID)
-	if rows == nil {
-		rows = []opshare.DayUsage{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"consented": c.FeeConsent != nil,
-		"from":      from.Format("2006-01-02"), "to": to.Format("2006-01-02"), "rows": rows,
-	})
-	return nil
-}

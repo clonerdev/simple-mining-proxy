@@ -184,8 +184,7 @@ func TestDeviceAdministrationNeedsItsPermissions(t *testing.T) {
 
 	e.create(t, `{"username":"olga","role":"operator","password":"`+userPass+`"}`)
 	e.create(t, `{"username":"viewer","role":"operator","revoke":["devices.manage"],"password":"`+userPass+`"}`)
-	e.create(t, `{"username":"acme-user","role":"customer","customer_id":"`+cid+`","password":"`+userPass+`"}`)
-	op, viewer, cust := e.login(t, "olga", userPass), e.login(t, "viewer", userPass), e.login(t, "acme-user", userPass)
+	op, viewer := e.login(t, "olga", userPass), e.login(t, "viewer", userPass)
 
 	// An operator handles devices.
 	if w := e.do("GET", "/api/devices", "", op); w.Code != 200 {
@@ -214,74 +213,25 @@ func TestDeviceAdministrationNeedsItsPermissions(t *testing.T) {
 	if d, _ := e.ds.Device(d.ID); d.Status != devices.Approved {
 		t.Fatalf("a forbidden call changed the device to %s", d.Status)
 	}
-	// A customer account has no staff access at all, not even to read.
-	for _, r := range [][3]string{
-		{"GET", "/api/devices", ""}, {"GET", "/api/customers", ""}, {"GET", "/api/customers/" + cid, ""},
-		{"POST", "/api/devices/" + d.ID + "/action", `{"action":"block"}`},
-		{"POST", "/api/customers/" + cid + "/status", `{"status":"blocked"}`},
-		{"GET", "/api/users", ""}, {"GET", "/api/audit", ""}, {"GET", "/api/miners", ""}, {"GET", "/api/events", ""},
-	} {
-		if w := e.do(r[0], r[1], r[2], cust); w.Code != http.StatusForbidden {
-			t.Errorf("customer %s %s: %d, want 403", r[0], r[1], w.Code)
-		}
-	}
-	if w := e.do("GET", "/api/self", "", cust); w.Code != 200 {
-		t.Fatalf("customer own view: %d %s", w.Code, w.Body)
-	}
 }
 
-func TestACustomerSeesOnlyItself(t *testing.T) {
+// Customers never use the panel: there is no customer account and no
+// endpoint made for one. Everything about a customer is done by the
+// administration.
+func TestCustomersHaveNoAccessToThePanel(t *testing.T) {
 	e := newDevEnv(t)
-	a, _ := e.customerVia(t, bearer, `{"slug":"acme","name":"Acme","account":"acmebtc","notes":"slow payer"}`)
-	b, _ := e.customerVia(t, bearer, `{"slug":"globex","name":"Globex","account":"globexbtc"}`)
-	aid, bid := a["id"].(string), b["id"].(string)
-	e.pending(t, aid, "a-rack1")
-	e.pending(t, bid, "b-rack1")
-	e.pending(t, bid, "b-rack2")
+	c, _ := e.customerVia(t, bearer, `{"slug":"acme","name":"Acme"}`)
+	cid := c["id"].(string)
 
-	e.create(t, `{"username":"acme-user","role":"customer","customer_id":"`+aid+`","password":"`+userPass+`"}`)
-	e.create(t, `{"username":"globex-user","role":"customer","customer_id":"`+bid+`","password":"`+userPass+`"}`)
-	ca, cb := e.login(t, "acme-user", userPass), e.login(t, "globex-user", userPass)
-
-	body := e.do("GET", "/api/self", "", ca).Body.String()
-	for _, foreign := range []string{"globex", "Globex", "b-rack1", "b-rack2", bid, "globexbtc"} {
-		if strings.Contains(body, foreign) {
-			t.Errorf("acme's view contains %q: %s", foreign, body)
+	if w := e.do("POST", "/api/users", `{"username":"acme-user","role":"customer","customer_id":"`+cid+`","password":"`+userPass+`"}`, bearer); w.Code != http.StatusBadRequest {
+		t.Fatalf("a customer account was created: %d %s", w.Code, w.Body)
+	}
+	for _, r := range [][2]string{
+		{"GET", "/api/self"}, {"POST", "/api/self/fee-consent"}, {"GET", "/api/self/operator-share"},
+	} {
+		if w := e.do(r[0], r[1], `{}`, bearer); w.Code != http.StatusNotFound {
+			t.Errorf("%s %s: %d, want 404", r[0], r[1], w.Code)
 		}
-	}
-	if !strings.Contains(body, "a-rack1") {
-		t.Fatalf("acme does not see its own device: %s", body)
-	}
-	// Operator-private data stays private.
-	for _, private := range []string{"slow payer", "10.0.0.1", "key_hash"} {
-		if strings.Contains(body, private) {
-			t.Errorf("the customer's view contains %q", private)
-		}
-	}
-	// The customer is taken from the account on the server: a parameter or a
-	// body field cannot change it.
-	body = e.do("GET", "/api/self?customer="+bid+"&customer_id="+bid, "", ca).Body.String()
-	if strings.Contains(body, "b-rack1") || strings.Contains(body, "Globex") {
-		t.Fatalf("a query parameter switched the customer: %s", body)
-	}
-	if body := e.do("GET", "/api/self", "", cb).Body.String(); !strings.Contains(body, "b-rack2") || strings.Contains(body, "a-rack1") {
-		t.Fatalf("globex's view is wrong: %s", body)
-	}
-
-	// A customer account must name a customer when it is made, and one whose
-	// customer was deleted since has nothing to show.
-	w := e.do("POST", "/api/users", `{"username":"loose","role":"customer","password":"`+userPass+`"}`, bearer)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("a customer account without a customer was created: %d", w.Code)
-	}
-	gone, _ := e.customerVia(t, bearer, `{"slug":"gone","name":"Gone"}`)
-	e.create(t, `{"username":"gone-user","role":"customer","customer_id":"`+gone["id"].(string)+`","password":"`+userPass+`"}`)
-	cg := e.login(t, "gone-user", userPass)
-	if w := e.do("DELETE", "/api/customers/"+gone["id"].(string), `{}`, bearer); w.Code != 200 {
-		t.Fatal(w.Body)
-	}
-	if w := e.do("GET", "/api/self", "", cg); w.Code != http.StatusNotFound {
-		t.Fatalf("a deleted customer's account: %d", w.Code)
 	}
 }
 

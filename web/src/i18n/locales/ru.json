@@ -640,8 +640,6 @@
     "account_role_unknown": "Неизвестная роль",
     "account_display_name_long": "Не более {{max}} символов",
     "account_language_unknown": "Неизвестный язык",
-    "account_customer_required": "Для учётной записи клиента нужна запись клиента",
-    "account_customer_staff_only": "Только учётные записи клиентов связываются с клиентом",
     "account_permission_unknown": "Неизвестное право: {{permission}}",
     "account_permissions_many": "Не более {{max}} прав",
     "account_users_many": "Не более {{max}} учётных записей",

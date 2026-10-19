@@ -144,12 +144,11 @@ type Customer struct {
 }
 
 // FeeConsent is the customer's agreement to the operator's share of their
-// mining. It can be given by the customer in their own panel or recorded by an
-// administrator who holds the signed agreement; either way it says who did it.
+// mining. Customers have no access to the panel, so it is recorded by the
+// administrator who holds the agreement, and it says who did it.
 type FeeConsent struct {
 	At time.Time `json:"at"`
-	// By is the account that recorded it: the customer's own user or an
-	// administrator.
+	// By is the administrator account that recorded it.
 	By string `json:"by"`
 	// Terms names the version or the text of the terms agreed to; Note is free
 	// text, for example where the signed agreement is kept.

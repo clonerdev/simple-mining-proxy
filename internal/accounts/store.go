@@ -32,12 +32,9 @@ type User struct {
 	Role        Role         `json:"role"`
 	Grant       []Permission `json:"grant,omitempty"`
 	Revoke      []Permission `json:"revoke,omitempty"`
-	// CustomerID links a customer account to its customer record (the devices
-	// module); it is empty for staff.
-	CustomerID string `json:"customer_id,omitempty"`
-	Language   string `json:"language,omitempty"`
-	Disabled   bool   `json:"disabled,omitempty"`
-	Hash       string `json:"hash"`
+	Language    string       `json:"language,omitempty"`
+	Disabled    bool         `json:"disabled,omitempty"`
+	Hash        string       `json:"hash"`
 
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
@@ -162,7 +159,6 @@ type NewUser struct {
 	Role        Role
 	Grant       []Permission
 	Revoke      []Permission
-	CustomerID  string
 	Language    string
 	Password    string
 }
@@ -186,7 +182,7 @@ func normalizePermissions(field string, in []Permission) ([]Permission, *Error) 
 	return out, nil
 }
 
-func checkCommon(role Role, display, lang, customerID string) *Error {
+func checkCommon(role Role, display, lang string) *Error {
 	if !role.Valid() {
 		return bad("role", "role_unknown")
 	}
@@ -201,12 +197,6 @@ func checkCommon(role Role, display, lang, customerID string) *Error {
 		if !ok {
 			return bad("language", "language_unknown")
 		}
-	}
-	if role == RoleCustomer && customerID == "" {
-		return bad("customer_id", "customer_required")
-	}
-	if role != RoleCustomer && customerID != "" {
-		return bad("customer_id", "customer_staff_only")
 	}
 	return nil
 }
@@ -228,7 +218,7 @@ func (s *Store) Create(in NewUser) (User, error) {
 	case s.reserved[name]:
 		return User{}, bad("username", "username_taken")
 	}
-	if e := checkCommon(in.Role, in.DisplayName, in.Language, in.CustomerID); e != nil {
+	if e := checkCommon(in.Role, in.DisplayName, in.Language); e != nil {
 		return User{}, e
 	}
 	if k := PasswordProblem(in.Password, name); k != "" {
@@ -249,7 +239,7 @@ func (s *Store) Create(in NewUser) (User, error) {
 	now := s.now().UTC()
 	u := User{
 		ID: newID(), Username: name, DisplayName: strings.TrimSpace(in.DisplayName), Role: in.Role,
-		Grant: grant, Revoke: revoke, CustomerID: in.CustomerID, Language: in.Language,
+		Grant: grant, Revoke: revoke, Language: in.Language,
 		Hash: hash, CreatedAt: now, UpdatedAt: now, PasswordChangedAt: now,
 	}
 	err = s.doc.Mutate(func(f *file) error {
@@ -273,7 +263,6 @@ type Update struct {
 	Role        *Role
 	Grant       *[]Permission
 	Revoke      *[]Permission
-	CustomerID  *string
 	Language    *string
 	Disabled    *bool
 }
@@ -293,9 +282,6 @@ func (s *Store) Update(id string, in Update) (User, error) {
 		if in.Role != nil {
 			u.Role = *in.Role
 		}
-		if in.CustomerID != nil {
-			u.CustomerID = *in.CustomerID
-		}
 		if in.Language != nil {
 			u.Language = *in.Language
 		}
@@ -313,7 +299,7 @@ func (s *Store) Update(id string, in Update) (User, error) {
 				return e
 			}
 		}
-		if e := checkCommon(u.Role, u.DisplayName, u.Language, u.CustomerID); e != nil {
+		if e := checkCommon(u.Role, u.DisplayName, u.Language); e != nil {
 			return e
 		}
 		u.UpdatedAt = s.now().UTC()

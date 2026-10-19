@@ -620,8 +620,6 @@
     "account_role_unknown": "نقش ناشناخته است",
     "account_display_name_long": "حداکثر {{max}} نویسه",
     "account_language_unknown": "زبان ناشناخته است",
-    "account_customer_required": "حساب مشتری به یک رکورد مشتری نیاز دارد",
-    "account_customer_staff_only": "فقط حساب‌های مشتری به رکورد مشتری وصل می‌شوند",
     "account_permission_unknown": "مجوز ناشناخته: {{permission}}",
     "account_permissions_many": "حداکثر {{max}} مجوز",
     "account_users_many": "حداکثر {{max}} حساب",

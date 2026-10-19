@@ -17,13 +17,10 @@ const (
 	// RoleOperator watches the farm and handles devices; it cannot change
 	// settings or pools, manage users or touch money rules unless granted.
 	RoleOperator Role = "operator"
-	// RoleCustomer is a mining customer: it sees its own devices and reports
-	// and nothing else.
-	RoleCustomer Role = "customer"
 )
 
 // Roles lists the roles in the order the UI shows them.
-var Roles = []Role{RoleSuperAdmin, RoleOperator, RoleCustomer}
+var Roles = []Role{RoleSuperAdmin, RoleOperator}
 
 func (r Role) Valid() bool {
 	for _, x := range Roles {
@@ -51,20 +48,19 @@ const (
 	BillingView   Permission = "billing.view"   // reports and the ledger
 	BillingManage Permission = "billing.manage" // revenue rules, settlement
 	AuditView     Permission = "audit.view"     // the audit log
-	SelfView      Permission = "self.view"      // a customer's own data
 )
 
-// StaffPermissions are every permission of the administration; SelfView is
-// for customers only.
+// StaffPermissions are every permission of the administration. Customers have
+// no account and no access to the panel: everything about them is done by the
+// administration.
 var StaffPermissions = []Permission{
 	StatsView, MinersView, MinersControl, EventsView, SettingsView, SettingsEdit,
 	UsersManage, DevicesView, DevicesManage, BillingView, BillingManage, AuditView,
 }
 
 var rolePermissions = map[Role][]Permission{
-	RoleSuperAdmin: append(append([]Permission{}, StaffPermissions...), SelfView),
+	RoleSuperAdmin: append([]Permission{}, StaffPermissions...),
 	RoleOperator:   {StatsView, MinersView, EventsView, SettingsView, DevicesView, DevicesManage, BillingView},
-	RoleCustomer:   {SelfView},
 }
 
 // RolePermissions returns the default permissions of a role.
@@ -74,9 +70,6 @@ func RolePermissions(r Role) []Permission {
 
 // Valid reports whether p is a known permission.
 func (p Permission) Valid() bool {
-	if p == SelfView {
-		return true
-	}
 	for _, x := range StaffPermissions {
 		if x == p {
 			return true
@@ -106,9 +99,14 @@ func (s Set) List() []Permission {
 // Effective is what an account may do: the permissions of its role, plus the
 // ones granted to it, minus the ones revoked. A super administrator always has
 // everything, so that no combination of edits can lock the administration out.
-// A customer never gets a staff permission, whatever is granted.
+// An account with a role that is not known (one stored by an older version,
+// such as the customer role that no longer exists) has nothing, whatever was
+// granted to it.
 func Effective(role Role, grant, revoke []Permission) Set {
 	out := Set{}
+	if !role.Valid() {
+		return out
+	}
 	for _, p := range rolePermissions[role] {
 		out[p] = struct{}{}
 	}
@@ -117,9 +115,6 @@ func Effective(role Role, grant, revoke []Permission) Set {
 	}
 	for _, p := range grant {
 		if !p.Valid() {
-			continue
-		}
-		if role == RoleCustomer && p != SelfView {
 			continue
 		}
 		out[p] = struct{}{}

@@ -79,12 +79,12 @@ func TestEffectivePermissions(t *testing.T) {
 	if !sa.Has(UsersManage) {
 		t.Fatal("revoke removed a super administrator's permission")
 	}
-	// A customer cannot be granted a staff permission.
-	c := Effective(RoleCustomer, []Permission{UsersManage, StatsView, DevicesManage}, nil)
-	if len(c) != 1 || !c.Has(SelfView) {
-		t.Fatalf("customer permissions: %v", c.List())
+	// Customers have no accounts: a role that is not known has no permission,
+	// whatever is granted to it.
+	if c := Effective("customer", []Permission{UsersManage, StatsView}, nil); len(c) != 0 {
+		t.Fatalf("an unknown role has permissions: %v", c.List())
 	}
-	if len(All()) != len(StaffPermissions)+1 {
+	if len(All()) != len(StaffPermissions) {
 		t.Fatal("All() is not every permission")
 	}
 }
@@ -130,8 +130,7 @@ func TestCreateValidation(t *testing.T) {
 		{"env admin name", NewUser{Username: "admin", Role: RoleOperator, Password: goodPassword}, "username_taken"},
 		{"weak password", NewUser{Username: "bob", Role: RoleOperator, Password: "short"}, "password_short"},
 		{"unknown role", NewUser{Username: "bob", Role: "root", Password: goodPassword}, "role_unknown"},
-		{"customer without record", NewUser{Username: "bob", Role: RoleCustomer, Password: goodPassword}, "customer_required"},
-		{"staff with customer", NewUser{Username: "bob", Role: RoleOperator, CustomerID: "c1", Password: goodPassword}, "customer_staff_only"},
+		{"customer role", NewUser{Username: "bob", Role: "customer", Password: goodPassword}, "role_unknown"},
 		{"unknown permission", NewUser{Username: "bob", Role: RoleOperator, Password: goodPassword, Grant: []Permission{"rm.rf"}}, "permission_unknown"},
 		{"unknown language", NewUser{Username: "bob", Role: RoleOperator, Password: goodPassword, Language: "xx"}, "language_unknown"},
 	}

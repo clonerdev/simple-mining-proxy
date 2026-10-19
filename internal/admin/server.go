@@ -100,7 +100,6 @@ func New(d Deps) http.Handler {
 		devEdit  = accounts.DevicesManage
 		billEdit = accounts.BillingManage
 		billView = accounts.BillingView
-		self     = accounts.SelfView
 	)
 	api("GET /api/auth/me", any_, s.me)
 	api("POST /api/auth/password", any_, s.changeOwnPassword)
@@ -148,9 +147,6 @@ func New(d Deps) http.Handler {
 	api("POST /api/devices/{id}/action", devEdit, s.actOnDevice)
 	api("PUT /api/devices/{id}", devEdit, s.updateDevice)
 	api("DELETE /api/devices/{id}", devEdit, s.deleteDevice)
-	api("GET /api/self", self, s.selfView)
-	api("POST /api/self/fee-consent", self, s.selfFeeConsent)
-	api("GET /api/self/operator-share", self, s.selfOperatorUsage)
 	api("GET /api/operator-share/usage", billView, s.operatorUsage)
 	api("GET /api/operator-share/pools", billView, s.operatorPools)
 	unknownAPI := func(w http.ResponseWriter, r *http.Request) {
@@ -372,7 +368,7 @@ func (s *Server) meView(p *principal) map[string]any {
 	}
 	return map[string]any{
 		"username": p.Username, "role": p.Role, "permissions": perms,
-		"customer_id": p.CustomerID, "language": p.Language, "user_id": p.UserID,
+		"language": p.Language, "user_id": p.UserID,
 	}
 }
 

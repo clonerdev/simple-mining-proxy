@@ -25,7 +25,6 @@ type userView struct {
 	Grant       []accounts.Permission `json:"grant"`
 	Revoke      []accounts.Permission `json:"revoke"`
 	Permissions []accounts.Permission `json:"permissions"`
-	CustomerID  string                `json:"customer_id"`
 	Language    string                `json:"language"`
 	Disabled    bool                  `json:"disabled"`
 	CreatedAt   time.Time             `json:"created_at"`
@@ -37,7 +36,7 @@ func viewOf(u accounts.User) userView {
 	v := userView{
 		ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Role: u.Role,
 		Grant: nonNil(u.Grant), Revoke: nonNil(u.Revoke), Permissions: u.Permissions().List(),
-		CustomerID: u.CustomerID, Language: u.Language, Disabled: u.Disabled,
+		Language: u.Language, Disabled: u.Disabled,
 		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	}
 	if !u.LastLoginAt.IsZero() {
@@ -106,7 +105,7 @@ func (s *Server) roles(w http.ResponseWriter, r *http.Request) error {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"roles":       rs,
-		"permissions": append(append([]accounts.Permission{}, accounts.StaffPermissions...), accounts.SelfView),
+		"permissions": accounts.StaffPermissions,
 		"languages":   accounts.Languages,
 	})
 	return nil
@@ -133,7 +132,6 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) error {
 		Role        accounts.Role         `json:"role"`
 		Grant       []accounts.Permission `json:"grant"`
 		Revoke      []accounts.Permission `json:"revoke"`
-		CustomerID  string                `json:"customer_id"`
 		Language    string                `json:"language"`
 		Password    string                `json:"password"`
 	}
@@ -147,7 +145,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) error {
 	}
 	u, err := s.d.Accounts.Create(accounts.NewUser{
 		Username: in.Username, DisplayName: in.DisplayName, Role: in.Role, Grant: in.Grant, Revoke: in.Revoke,
-		CustomerID: in.CustomerID, Language: in.Language, Password: in.Password,
+		Language: in.Language, Password: in.Password,
 	})
 	if err != nil {
 		return accountsErr(err)
@@ -172,7 +170,6 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) error {
 		Role        *accounts.Role         `json:"role"`
 		Grant       *[]accounts.Permission `json:"grant"`
 		Revoke      *[]accounts.Permission `json:"revoke"`
-		CustomerID  *string                `json:"customer_id"`
 		Language    *string                `json:"language"`
 		Disabled    *bool                  `json:"disabled"`
 	}
@@ -202,7 +199,7 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) error {
 	}
 	u, err := s.d.Accounts.Update(id, accounts.Update{
 		DisplayName: in.DisplayName, Role: in.Role, Grant: in.Grant, Revoke: in.Revoke,
-		CustomerID: in.CustomerID, Language: in.Language, Disabled: in.Disabled,
+		Language: in.Language, Disabled: in.Disabled,
 	})
 	if err != nil {
 		return accountsErr(err)

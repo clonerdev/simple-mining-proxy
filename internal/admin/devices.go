@@ -111,17 +111,13 @@ func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
-// customerViewOf builds the view; staff is false for the customer's own view,
-// which leaves out the operator's private notes.
-func (s *Server) customerViewOf(c devices.Customer, devs []devices.Device, lv map[string]*live, staff bool) customerView {
+// customerViewOf builds the view of a customer for the administration.
+func (s *Server) customerViewOf(c devices.Customer, devs []devices.Device, lv map[string]*live) customerView {
 	v := customerView{
 		ID: c.ID, Slug: c.Slug, Name: c.Name, Status: c.Status, StatusReason: c.StatusReason, StatusAt: timePtr(c.StatusAt),
 		Account: c.Account, MaxDevices: c.MaxDevices, MaxConnections: c.MaxConnections, ExpiresAt: c.ExpiresAt,
-		Language: c.Language, FeeConsent: c.FeeConsent, KeyRotatedAt: c.KeyRotatedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		Language: c.Language, Notes: c.Notes, FeeConsent: c.FeeConsent, KeyRotatedAt: c.KeyRotatedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 		Devices: map[devices.DeviceStatus]int{},
-	}
-	if staff {
-		v.Notes = c.Notes
 	}
 	for _, d := range devs {
 		if d.CustomerID != c.ID {
@@ -149,7 +145,7 @@ type deviceView struct {
 	Why    string `json:"why,omitempty"`
 }
 
-func (s *Server) deviceViewOf(d devices.Device, lv map[string]*live, staff bool) deviceView {
+func (s *Server) deviceViewOf(d devices.Device, lv map[string]*live) deviceView {
 	v := deviceView{Device: d}
 	if c, ok := s.d.Devices.Customer(d.CustomerID); ok {
 		v.CustomerSlug, v.CustomerName = c.Slug, c.Name
@@ -157,10 +153,6 @@ func (s *Server) deviceViewOf(d devices.Device, lv map[string]*live, staff bool)
 	v.Usable, v.Why = s.d.Devices.Usable(d.ID)
 	if l := lv[d.ID]; l != nil {
 		v.Live = *l
-	}
-	if !staff {
-		v.Notes, v.StatusBy, v.LastIP = "", "", ""
-		v.Device.History = nil
 	}
 	return v
 }
@@ -175,7 +167,7 @@ func (s *Server) listCustomers(w http.ResponseWriter, r *http.Request) error {
 	lv, devs := s.liveByDevice(now), s.d.Devices.Devices(devices.Filter{})
 	out := []customerView{}
 	for _, c := range s.d.Devices.Customers() {
-		out = append(out, s.customerViewOf(c, devs, lv, true))
+		out = append(out, s.customerViewOf(c, devs, lv))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"customers": out, "counts": s.d.Devices.Counts(),
@@ -231,7 +223,7 @@ func (s *Server) createCustomer(w http.ResponseWriter, r *http.Request) error {
 	}
 	// The key is shown here, once: only its hash is kept.
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"customer": s.customerViewOf(c, nil, nil, true), "key": key,
+		"customer": s.customerViewOf(c, nil, nil), "key": key,
 	})
 	return nil
 }
@@ -247,9 +239,9 @@ func (s *Server) getCustomer(w http.ResponseWriter, r *http.Request) error {
 	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
 	views := make([]deviceView, 0, len(devs))
 	for _, d := range devs {
-		views = append(views, s.deviceViewOf(d, lv, true))
+		views = append(views, s.deviceViewOf(d, lv))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"customer": s.customerViewOf(c, devs, lv, true), "devices": views})
+	writeJSON(w, http.StatusOK, map[string]any{"customer": s.customerViewOf(c, devs, lv), "devices": views})
 	return nil
 }
 
@@ -283,7 +275,7 @@ func (s *Server) updateCustomer(w http.ResponseWriter, r *http.Request) error {
 		return devicesErr(err)
 	}
 	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
-	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv, true))
+	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv))
 	return nil
 }
 
@@ -303,13 +295,13 @@ func (s *Server) setCustomerStatus(w http.ResponseWriter, r *http.Request) error
 		return devicesErr(err)
 	}
 	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
-	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv, true))
+	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv))
 	return nil
 }
 
 // feeConsent records or withdraws the customer's consent to the operator's
-// share. An administrator records it for a customer who signed an agreement;
-// the customer does the same for themself in their own panel (selfFeeConsent).
+// share. Customers have no access to the panel, so the administrator records
+// it for a customer who agreed, and says in the note where the agreement is.
 func (s *Server) feeConsent(w http.ResponseWriter, r *http.Request) error {
 	if s.d.Devices == nil {
 		return errNoDevices
@@ -327,28 +319,7 @@ func (s *Server) feeConsent(w http.ResponseWriter, r *http.Request) error {
 		return devicesErr(err)
 	}
 	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
-	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv, true))
-	return nil
-}
-
-func (s *Server) selfFeeConsent(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.selfCustomer(r)
-	if err != nil {
-		return err
-	}
-	var in struct {
-		Grant bool   `json:"grant"`
-		Terms string `json:"terms"`
-	}
-	if err := decode(r, &in); err != nil {
-		return err
-	}
-	c, err = s.d.Devices.SetFeeConsent(c.ID, in.Grant, in.Terms, "", principalOf(r).actor(clientIP(r)))
-	if err != nil {
-		return devicesErr(err)
-	}
-	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
-	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv, false))
+	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv))
 	return nil
 }
 
@@ -390,7 +361,7 @@ func (s *Server) listDevices(w http.ResponseWriter, r *http.Request) error {
 	lv := s.liveByDevice(time.Now())
 	out := []deviceView{}
 	for _, d := range s.d.Devices.Devices(devices.Filter{CustomerID: q.Get("customer"), Status: status, Text: q.Get("q")}) {
-		out = append(out, s.deviceViewOf(d, lv, true))
+		out = append(out, s.deviceViewOf(d, lv))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out, "counts": s.d.Devices.Counts(), "actions": devices.Actions})
 	return nil
@@ -411,7 +382,7 @@ func (s *Server) actOnDevice(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return devicesErr(err)
 	}
-	writeJSON(w, http.StatusOK, s.deviceViewOf(d, s.liveByDevice(time.Now()), true))
+	writeJSON(w, http.StatusOK, s.deviceViewOf(d, s.liveByDevice(time.Now())))
 	return nil
 }
 
@@ -439,7 +410,7 @@ func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return devicesErr(err)
 	}
-	writeJSON(w, http.StatusOK, s.deviceViewOf(d, s.liveByDevice(time.Now()), true))
+	writeJSON(w, http.StatusOK, s.deviceViewOf(d, s.liveByDevice(time.Now())))
 	return nil
 }
 
@@ -451,39 +422,5 @@ func (s *Server) deleteDevice(w http.ResponseWriter, r *http.Request) error {
 		return devicesErr(err)
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	return nil
-}
-
-// ---- a customer's own view ----
-
-// selfCustomer is the customer behind the signed-in account. The id comes
-// from the account on the server, never from the request, so a customer
-// cannot ask for another customer's data by changing a number.
-func (s *Server) selfCustomer(r *http.Request) (devices.Customer, error) {
-	if s.d.Devices == nil {
-		return devices.Customer{}, errNoDevices
-	}
-	id := principalOf(r).CustomerID
-	if id == "" {
-		return devices.Customer{}, apierr.NotFound(apierr.M("self_no_customer", "this account is not linked to a customer"))
-	}
-	c, ok := s.d.Devices.Customer(id)
-	if !ok {
-		return devices.Customer{}, apierr.NotFound(apierr.M("self_no_customer", "this account is not linked to a customer"))
-	}
-	return c, nil
-}
-
-func (s *Server) selfView(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.selfCustomer(r)
-	if err != nil {
-		return err
-	}
-	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
-	views := make([]deviceView, 0, len(devs))
-	for _, d := range devs {
-		views = append(views, s.deviceViewOf(d, lv, false))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"customer": s.customerViewOf(c, devs, lv, false), "devices": views})
 	return nil
 }

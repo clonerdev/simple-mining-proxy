@@ -620,8 +620,6 @@
     "account_role_unknown": "Unknown role",
     "account_display_name_long": "At most {{max}} characters",
     "account_language_unknown": "Unknown language",
-    "account_customer_required": "A customer account needs a customer record",
-    "account_customer_staff_only": "Only customer accounts are linked to a customer",
     "account_permission_unknown": "Unknown permission: {{permission}}",
     "account_permissions_many": "At most {{max}} permissions",
     "account_users_many": "At most {{max}} accounts",

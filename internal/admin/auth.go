@@ -31,13 +31,12 @@ const (
 // disabled account or a changed role takes effect at once, in sessions that
 // are already open.
 type principal struct {
-	Kind       string // audit.ActorEnvAdmin, ActorUser or ActorAPIToken
-	UserID     string
-	Username   string
-	Role       accounts.Role
-	CustomerID string
-	Language   string
-	perms      accounts.Set
+	Kind     string // audit.ActorEnvAdmin, ActorUser or ActorAPIToken
+	UserID   string
+	Username string
+	Role     accounts.Role
+	Language string
+	perms    accounts.Set
 }
 
 func (p *principal) Can(perm accounts.Permission) bool {
@@ -107,7 +106,7 @@ func (a *auth) apiToken() *principal {
 
 func userPrincipal(u accounts.User) *principal {
 	return &principal{Kind: audit.ActorUser, UserID: u.ID, Username: u.Username, Role: u.Role,
-		CustomerID: u.CustomerID, Language: u.Language, perms: u.Permissions()}
+		Language: u.Language, perms: u.Permissions()}
 }
 
 // authenticate checks the Bearer token or the session cookie. A wrong

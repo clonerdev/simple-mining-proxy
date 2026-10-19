@@ -230,23 +230,28 @@ func TestNoEscalation(t *testing.T) {
 	}
 }
 
-func TestCustomerSeesNothingOfTheAdministration(t *testing.T) {
+func TestThereAreNoCustomerAccounts(t *testing.T) {
 	e := newAccEnv(t)
-	e.create(t, `{"username":"cust1","role":"customer","customer_id":"c-1","password":"`+userPass+`"}`)
-	c := e.login(t, "cust1", userPass)
-	var me struct {
-		Role        string   `json:"role"`
+	w := e.do("POST", "/api/users", `{"username":"cust1","role":"customer","password":"`+userPass+`"}`, bearer)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("a customer account was created: %d %s", w.Code, w.Body)
+	}
+	var roles struct {
+		Roles []struct {
+			Role string `json:"role"`
+		} `json:"roles"`
 		Permissions []string `json:"permissions"`
-		CustomerID  string   `json:"customer_id"`
 	}
-	w := e.do("GET", "/api/auth/me", "", c)
-	json.Unmarshal(w.Body.Bytes(), &me)
-	if w.Code != 200 || me.Role != "customer" || len(me.Permissions) != 1 || me.Permissions[0] != "self.view" || me.CustomerID != "c-1" {
-		t.Fatalf("me: %d %s", w.Code, w.Body)
+	w = e.do("GET", "/api/roles", "", bearer)
+	json.Unmarshal(w.Body.Bytes(), &roles)
+	for _, r := range roles.Roles {
+		if r.Role == "customer" {
+			t.Errorf("the role list offers %q", r.Role)
+		}
 	}
-	for _, p := range []string{"/api/status", "/api/miners", "/api/events", "/api/pools", "/api/settings", "/api/users", "/api/audit", "/api/history", "/api/network"} {
-		if w := e.do("GET", p, "", c); w.Code != 403 {
-			t.Errorf("customer GET %s: %d, want 403", p, w.Code)
+	for _, p := range roles.Permissions {
+		if p == "self.view" {
+			t.Errorf("the permission list offers %q", p)
 		}
 	}
 }
