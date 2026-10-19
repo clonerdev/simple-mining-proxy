@@ -10,11 +10,13 @@ import (
 	"github.com/famfamfam/simple-mining-proxy/internal/accounts"
 	"github.com/famfamfam/simple-mining-proxy/internal/audit"
 	"github.com/famfamfam/simple-mining-proxy/internal/devices"
+	"github.com/famfamfam/simple-mining-proxy/internal/opshare"
 )
 
 type devEnv struct {
 	*accEnv
-	ds *devices.Store
+	ds  *devices.Store
+	ops *opshare.Router
 }
 
 func newDevEnv(t *testing.T) *devEnv {
@@ -33,11 +35,13 @@ func newDevEnv(t *testing.T) *devEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ops := opshare.NewRouter(filepath.Join(dir, "opshare"), func() opshare.Config { return opshare.Config{Enabled: true} },
+		opshare.FlatRules{Fraction: func() float64 { return 0.02 }}, ds)
 	e := newEnv(t, func(d *Deps) {
-		d.Accounts, d.Audit, d.Devices = acc, aud, ds
+		d.Accounts, d.Audit, d.Devices, d.OperatorShare = acc, aud, ds, ops
 		(&devices.Enforcement{Store: ds, Registry: d.Registry, Audit: aud, Events: d.Events}).Install()
 	})
-	return &devEnv{accEnv: &accEnv{env: e, acc: acc, aud: aud}, ds: ds}
+	return &devEnv{accEnv: &accEnv{env: e, acc: acc, aud: aud}, ds: ds, ops: ops}
 }
 
 // customerVia creates a customer through the API and returns its view and key.

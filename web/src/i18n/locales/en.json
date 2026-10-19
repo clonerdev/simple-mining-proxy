@@ -250,7 +250,8 @@
       "logging": "Logging",
       "alerts": "Monitoring and alerts",
       "hunt": "eCash block hunting (XEC)",
-      "devices": "Device control"
+      "devices": "Device control",
+      "opshare": "Operator share"
     },
     "appliesTo": {
       "immediately": "immediately",
@@ -424,6 +425,34 @@
       "device_pending_limit": {
         "title": "Devices awaiting approval per customer",
         "desc": "A customer may have this many devices waiting for approval. Logins of further unknown workers are refused and no record is made, so a leaked key cannot fill the list."
+      },
+      "operator_share": {
+        "title": "Operator share",
+        "desc": "On: a customer's shares may be credited to the operator's own worker for part of the mining time. It happens only for a customer who gave consent, on a pool marked as crediting a second worker, with device control on. Off: every share goes to the customer, as before.",
+        "options": {
+          "off": "Off",
+          "on": "On"
+        }
+      },
+      "operator_share_kind": {
+        "title": "Kind of share",
+        "desc": "Percent of the mining time, or minutes of mining per day spread over the cycles. One rule applies, never both.",
+        "options": {
+          "percent": "Percent of mining time",
+          "minutes_per_day": "Minutes per day"
+        }
+      },
+      "operator_share_amount": {
+        "title": "Amount",
+        "desc": "The percent, or the minutes per day, depending on the kind. For example 2 percent, or 60 minutes per day (about 4.17 percent)."
+      },
+      "operator_share_max_percent": {
+        "title": "Cap",
+        "desc": "Whatever the amount says, the operator never takes more than this part of a customer's mining time, so a typo cannot take half of it."
+      },
+      "operator_share_cycle": {
+        "title": "Cycle length",
+        "desc": "The operator's window of a device sits once in every cycle. A short cycle spreads the share evenly; a long one makes fewer, longer switches."
       }
     },
     "server": {
@@ -618,7 +647,10 @@
     "device_device_limit": "The customer already has {{max}} devices; raise the limit first",
     "device_devices_many": "At most {{max}} devices",
     "device_reason_long": "At most {{max}} characters",
-    "device_expires_invalid": "Use a date and time like 2027-01-31T00:00:00Z"
+    "device_expires_invalid": "Use a date and time like 2027-01-31T00:00:00Z",
+    "operator_share_unavailable": "The operator share is not available on this server.",
+    "bad_date": "{{name}} must be a date like 2006-01-02.",
+    "bad_range": "The end date is before the start date."
   },
   "stats": {
     "title": "Charts",

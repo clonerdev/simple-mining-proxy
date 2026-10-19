@@ -26,6 +26,7 @@ import (
 	"github.com/famfamfam/simple-mining-proxy/internal/history"
 	"github.com/famfamfam/simple-mining-proxy/internal/listener"
 	"github.com/famfamfam/simple-mining-proxy/internal/monitor"
+	"github.com/famfamfam/simple-mining-proxy/internal/opshare"
 	"github.com/famfamfam/simple-mining-proxy/internal/pool"
 	"github.com/famfamfam/simple-mining-proxy/internal/profit"
 	"github.com/famfamfam/simple-mining-proxy/internal/rtt"
@@ -144,6 +145,27 @@ func run() error {
 		Live:         reg.LiveCustomer,
 	})
 
+	// The operator's optional share of a customer's mining. It does nothing
+	// until "operator_share" is switched on, a pool is marked as crediting a
+	// second worker, and a customer has recorded consent; the session checks
+	// all three on every share. It needs device control: without a customer
+	// there is nobody who could have consented.
+	opShare := opshare.NewRouter(filepath.Join(cfg.DataDir, "opshare"),
+		func() opshare.Config {
+			v := set.Get()
+			return opshare.Config{
+				Enabled:     v.OperatorShare == settings.OperatorShareOn,
+				Cycle:       v.OperatorShareCycle,
+				MaxFraction: float64(v.OperatorShareMaxPct) / 100,
+			}
+		},
+		opshare.FlatRules{Fraction: func() float64 { return set.Get().OperatorShareFraction() }},
+		dev)
+	opShare.OnTrip = func(poolID, reason string) {
+		ev.Warn("operator_share_off", "operator share switched off on pool %s for a while: %s", poolID, reason)
+	}
+	srv.Splitter = opShare
+
 	hist, err := history.New(filepath.Join(cfg.DataDir, "history"),
 		func() history.Sample {
 			return history.Sample{Totals: collector.Totals(), Miners: reg.Counts().ByPool, Online: reg.Workers()}
@@ -250,7 +272,7 @@ func run() error {
 	httpSrv := &http.Server{
 		Handler: admin.New(admin.Deps{
 			Config: cfg, State: st, Settings: set, Pools: mgr, Registry: reg,
-			Stats: collector, History: hist, Profit: profitSw, Timed: timedSw, RTT: watcher, Telegram: bot, Accounts: acc, Audit: aud, Devices: dev,
+			Stats: collector, History: hist, Profit: profitSw, Timed: timedSw, RTT: watcher, Telegram: bot, Accounts: acc, Audit: aud, Devices: dev, OperatorShare: opShare,
 			Events: ev, Certs: certs, Started: started,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -300,6 +322,8 @@ func run() error {
 	devDone := make(chan struct{})
 	go func() { dev.Run(ctx); close(devDone) }()
 	go enforce.Run(ctx)
+	opDone := make(chan struct{})
+	go func() { opShare.Run(ctx); close(opDone) }()
 	httpErr := make(chan error, 1)
 	go func() {
 		slog.Info("admin UI listening", "addr", adminLn.Addr().String())
@@ -332,7 +356,7 @@ func run() error {
 	}
 	// The history writes the unfinished minute and the monitor the last
 	// shares when ctx is done.
-	for _, done := range []chan struct{}{histDone, monDone, devDone} {
+	for _, done := range []chan struct{}{histDone, monDone, devDone, opDone} {
 		select {
 		case <-done:
 		case <-shCtx.Done():

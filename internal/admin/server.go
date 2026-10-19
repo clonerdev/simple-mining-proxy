@@ -23,6 +23,7 @@ import (
 	"github.com/famfamfam/simple-mining-proxy/internal/devices"
 	"github.com/famfamfam/simple-mining-proxy/internal/events"
 	"github.com/famfamfam/simple-mining-proxy/internal/history"
+	"github.com/famfamfam/simple-mining-proxy/internal/opshare"
 	"github.com/famfamfam/simple-mining-proxy/internal/pool"
 	"github.com/famfamfam/simple-mining-proxy/internal/profit"
 	"github.com/famfamfam/simple-mining-proxy/internal/rtt"
@@ -59,6 +60,9 @@ type Deps struct {
 	// Devices is the customers and devices store; nil leaves the device
 	// endpoints answering "not available".
 	Devices *devices.Store
+	// OperatorShare gives the account of the operator's share and the pools it
+	// switched itself off on; nil leaves its endpoints answering "not available".
+	OperatorShare *opshare.Router
 }
 
 type Server struct {
@@ -95,6 +99,7 @@ func New(d Deps) http.Handler {
 		devView  = accounts.DevicesView
 		devEdit  = accounts.DevicesManage
 		billEdit = accounts.BillingManage
+		billView = accounts.BillingView
 		self     = accounts.SelfView
 	)
 	api("GET /api/auth/me", any_, s.me)
@@ -145,6 +150,9 @@ func New(d Deps) http.Handler {
 	api("DELETE /api/devices/{id}", devEdit, s.deleteDevice)
 	api("GET /api/self", self, s.selfView)
 	api("POST /api/self/fee-consent", self, s.selfFeeConsent)
+	api("GET /api/self/operator-share", self, s.selfOperatorUsage)
+	api("GET /api/operator-share/usage", billView, s.operatorUsage)
+	api("GET /api/operator-share/pools", billView, s.operatorPools)
 	unknownAPI := func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, apierr.NotFound(apierr.M("api_not_found", "unknown API endpoint")))
 	}
