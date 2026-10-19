@@ -646,6 +646,8 @@
     "device_device_limit": "این مشتری هم‌اکنون {{max}} دستگاه دارد؛ ابتدا سقف را افزایش دهید",
     "device_devices_many": "حداکثر {{max}} دستگاه",
     "device_reason_long": "حداکثر {{max}} نویسه",
+    "device_expires_past": "زمان پایان باید در آینده باشد",
+    "device_expires_action": "زمان پایان فقط همراه با تأیید یا ازسرگیری قابل تعیین است",
     "device_expires_invalid": "تاریخ و زمان را مانند 2027-01-31T00:00:00Z وارد کنید",
     "operator_share_unavailable": "سهم اپراتور روی این سرور در دسترس نیست.",
     "bad_date": "{{name}} باید تاریخی مانند 2006-01-02 باشد.",

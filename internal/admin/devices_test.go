@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/famfamfam/simple-mining-proxy/internal/accounts"
 	"github.com/famfamfam/simple-mining-proxy/internal/audit"
@@ -279,5 +280,65 @@ func TestDeletingACustomerWithDevicesIsRefused(t *testing.T) {
 	}
 	if w := e.do("DELETE", "/api/customers/"+id, `{}`, bearer); w.Code != 200 {
 		t.Fatalf("delete customer: %d %s", w.Code, w.Body)
+	}
+}
+
+// The administrator approves a device for a time: the approval and its end are
+// one request, and a bad end changes nothing.
+func TestApproveADeviceForAMonthThroughTheAPI(t *testing.T) {
+	e := newDevEnv(t)
+	c, _ := e.customerVia(t, bearer, `{"slug":"acme","name":"Acme"}`)
+	cid := c["id"].(string)
+	d := e.pending(t, cid, "rack1")
+
+	var out struct {
+		Status    string     `json:"status"`
+		ExpiresAt *time.Time `json:"expires_at"`
+		Usable    bool       `json:"usable"`
+	}
+	end := time.Now().UTC().AddDate(0, 1, 0).Truncate(time.Second)
+	w := e.do("POST", "/api/devices/"+d.ID+"/action",
+		`{"action":"approve","reason":"paid","expires_at":"`+end.Format(time.RFC3339)+`"}`, bearer)
+	if w.Code != 200 {
+		t.Fatalf("approve with an expiry: %d %s", w.Code, w.Body)
+	}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	if out.Status != "approved" || out.ExpiresAt == nil || !out.ExpiresAt.Equal(end) || !out.Usable {
+		t.Fatalf("approved device: %+v", out)
+	}
+
+	// Disable and enable it again, then block and allow it: the end stays.
+	for _, a := range []string{"suspend", "resume", "block", "unblock"} {
+		if w := e.do("POST", "/api/devices/"+d.ID+"/action", `{"action":"`+a+`"}`, bearer); w.Code != 200 {
+			t.Fatalf("%s: %d %s", a, w.Code, w.Body)
+		}
+	}
+	if got, _ := e.ds.Device(d.ID); got.Status != devices.Approved || got.ExpiresAt == nil || !got.ExpiresAt.Equal(end) {
+		t.Fatalf("after suspend/resume/block/unblock: %s %v", got.Status, got.ExpiresAt)
+	}
+
+	// Extend it with the device update.
+	longer := end.AddDate(0, 1, 0)
+	if w := e.do("PUT", "/api/devices/"+d.ID, `{"expires_at":"`+longer.Format(time.RFC3339)+`"}`, bearer); w.Code != 200 {
+		t.Fatalf("extend: %d %s", w.Code, w.Body)
+	}
+	if got, _ := e.ds.Device(d.ID); !got.ExpiresAt.Equal(longer) {
+		t.Fatalf("not extended: %v", got.ExpiresAt)
+	}
+
+	// A bad end is a validation error on the field, and changes nothing.
+	d2 := e.pending(t, cid, "rack2")
+	for _, tc := range []struct{ body, field string }{
+		{`{"action":"approve","expires_at":"` + time.Now().Add(-time.Hour).UTC().Format(time.RFC3339) + `"}`, "expires_at"},
+		{`{"action":"approve","expires_at":"next month"}`, "expires_at"},
+		{`{"action":"block","expires_at":"` + longer.Format(time.RFC3339) + `"}`, "expires_at"},
+	} {
+		w := e.do("POST", "/api/devices/"+d2.ID+"/action", tc.body, bearer)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), tc.field) {
+			t.Errorf("%s: %d %s", tc.body, w.Code, w.Body)
+		}
+		if got, _ := e.ds.Device(d2.ID); got.Status != devices.Pending || got.ExpiresAt != nil {
+			t.Fatalf("%s changed the device: %s %v", tc.body, got.Status, got.ExpiresAt)
+		}
 	}
 }

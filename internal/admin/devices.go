@@ -374,11 +374,18 @@ func (s *Server) actOnDevice(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Action devices.Action `json:"action"`
 		Reason string         `json:"reason"`
+		// ExpiresAt ends the device's access; allowed with approve and resume.
+		ExpiresAt *string `json:"expires_at"`
 	}
 	if err := decode(r, &in); err != nil {
 		return err
 	}
-	d, err := s.d.Devices.Act(r.PathValue("id"), in.Action, in.Reason, principalOf(r).actor(clientIP(r)))
+	exp, err := parseExpiry(in.ExpiresAt)
+	if err != nil {
+		return err
+	}
+	d, err := s.d.Devices.ActWith(r.PathValue("id"), in.Action, in.Reason, devices.ActOptions{ExpiresAt: exp},
+		principalOf(r).actor(clientIP(r)))
 	if err != nil {
 		return devicesErr(err)
 	}

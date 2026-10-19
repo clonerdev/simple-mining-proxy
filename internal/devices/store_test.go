@@ -1991,3 +1991,100 @@ func TestFailedOperationsEmitNothing(t *testing.T) {
 		t.Errorf("events: %+v", evs)
 	}
 }
+
+func TestApproveWithAnExpiry(t *testing.T) {
+	s, clk := newStore(t)
+	log := logEvents(s)
+	c, _ := mkCust(t, s, NewCustomer{})
+	d := register(t, s, c, "rack1")
+
+	// One month from now: the device is approved and its end is fixed in the
+	// same step, so it is never approved without it.
+	end := clk.Now().AddDate(0, 1, 0)
+	got, err := s.ActWith(d.ID, ActApprove, "paid for a month", ActOptions{ExpiresAt: &end}, admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != Approved || got.ExpiresAt == nil || !got.ExpiresAt.Equal(end) {
+		t.Fatalf("after approve: %s, expires %v", got.Status, got.ExpiresAt)
+	}
+	if ok, why := s.Usable(d.ID); !ok {
+		t.Fatalf("not usable inside its month: %s", why)
+	}
+	if evs := log.byType(EvDeviceApproved); len(evs) != 1 || evs[0].Details["expires_at"] != end.Format(time.RFC3339) {
+		t.Fatalf("the audit event does not carry the expiry: %+v", evs)
+	}
+
+	// The month passes: the device is refused with its own reason, and stays
+	// approved so that extending it brings it back.
+	clk.Advance(32 * 24 * time.Hour)
+	if ok, why := s.Usable(d.ID); ok || why != "device_expired" {
+		t.Fatalf("after the month: %v %q", ok, why)
+	}
+	later := clk.Now().AddDate(0, 1, 0)
+	if _, err := s.UpdateDevice(d.ID, DeviceUpdate{ExpiresAt: &later}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if ok, why := s.Usable(d.ID); !ok {
+		t.Fatalf("not usable after extending: %s", why)
+	}
+}
+
+func TestResumeWithAnExpiryAndActionsWithout(t *testing.T) {
+	s, clk := newStore(t)
+	c, _ := mkCust(t, s, NewCustomer{})
+	d := mkDevice(t, s, c, "rack1", Approved)
+	first := clk.Now().Add(48 * time.Hour)
+	if _, err := s.UpdateDevice(d.ID, DeviceUpdate{ExpiresAt: &first}, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	// An action that takes no expiry leaves the one the device has.
+	act(t, s, d.ID, ActSuspend)
+	if got, _ := s.Device(d.ID); got.ExpiresAt == nil || !got.ExpiresAt.Equal(first) {
+		t.Fatalf("suspend changed the expiry: %v", got.ExpiresAt)
+	}
+	act(t, s, d.ID, ActResume)
+	if got, _ := s.Device(d.ID); got.ExpiresAt == nil || !got.ExpiresAt.Equal(first) {
+		t.Fatalf("resume without an expiry changed it: %v", got.ExpiresAt)
+	}
+
+	// Resume can set a new one.
+	act(t, s, d.ID, ActSuspend)
+	second := clk.Now().Add(30 * 24 * time.Hour)
+	got, err := s.ActWith(d.ID, ActResume, "", ActOptions{ExpiresAt: &second}, admin)
+	if err != nil || got.Status != Approved || !got.ExpiresAt.Equal(second) {
+		t.Fatalf("resume with an expiry: %v %+v", err, got)
+	}
+}
+
+func TestAnExpiryIsRefusedWhereItMakesNoSense(t *testing.T) {
+	s, clk := newStore(t)
+	c, _ := mkCust(t, s, NewCustomer{})
+	d := register(t, s, c, "rack1")
+
+	past := clk.Now().Add(-time.Hour)
+	future := clk.Now().Add(time.Hour)
+	for _, tc := range []struct {
+		name   string
+		action Action
+		at     time.Time
+		key    string
+	}{
+		{"approve in the past", ActApprove, past, "expires_past"},
+		{"approve at this very moment", ActApprove, clk.Now(), "expires_past"},
+		{"block with an expiry", ActBlock, future, "expires_action"},
+		{"reject with an expiry", ActReject, future, "expires_action"},
+	} {
+		at := tc.at
+		_, err := s.ActWith(d.ID, tc.action, "", ActOptions{ExpiresAt: &at}, admin)
+		var e *Error
+		if !errors.As(err, &e) || e.Key != tc.key || e.Field != "expires_at" {
+			t.Errorf("%s: %v, want %s", tc.name, err, tc.key)
+		}
+		// A refused action changes nothing.
+		if got, _ := s.Device(d.ID); got.Status != Pending || got.ExpiresAt != nil {
+			t.Fatalf("%s changed the device: %s %v", tc.name, got.Status, got.ExpiresAt)
+		}
+	}
+}

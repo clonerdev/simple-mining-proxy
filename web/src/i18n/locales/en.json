@@ -646,6 +646,8 @@
     "device_device_limit": "The customer already has {{max}} devices; raise the limit first",
     "device_devices_many": "At most {{max}} devices",
     "device_reason_long": "At most {{max}} characters",
+    "device_expires_past": "The expiry must be a time in the future",
+    "device_expires_action": "An expiry can be set only together with approve or resume",
     "device_expires_invalid": "Use a date and time like 2027-01-31T00:00:00Z",
     "operator_share_unavailable": "The operator share is not available on this server.",
     "bad_date": "{{name}} must be a date like 2006-01-02.",

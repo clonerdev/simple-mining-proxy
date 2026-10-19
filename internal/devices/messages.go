@@ -25,6 +25,8 @@ var Messages = map[string]string{
 	"device_limit":          "the customer already has {max} devices; raise the limit first",
 	"devices_many":          "at most {max} devices",
 	"reason_long":           "at most {max} characters",
+	"expires_past":          "the expiry must be a time in the future",
+	"expires_action":        "an expiry can be set only together with approve or resume",
 }
 
 // Error is a problem with a request that the caller can show to the operator.

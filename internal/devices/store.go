@@ -789,9 +789,31 @@ var actionEvent = map[Action]string{
 // limit. The live connections of a device that can no longer mine are closed
 // by the handler of the resulting event.
 func (s *Store) Act(deviceID string, action Action, reason string, by audit.Actor) (Device, error) {
+	return s.ActWith(deviceID, action, reason, ActOptions{}, by)
+}
+
+// ActOptions are the extras of an action.
+type ActOptions struct {
+	// ExpiresAt, when set, becomes the device's expiry in the same step as the
+	// action, so that a device approved for one month is never left approved
+	// without its end. Only approve and resume take it, and it must lie in the
+	// future.
+	ExpiresAt *time.Time
+}
+
+// ActWith is Act with options.
+func (s *Store) ActWith(deviceID string, action Action, reason string, opt ActOptions, by audit.Actor) (Device, error) {
 	tr, ok := transitions[action]
 	if !ok {
 		return Device{}, bad("", "action_invalid")
+	}
+	if opt.ExpiresAt != nil {
+		if action != ActApprove && action != ActResume {
+			return Device{}, bad("expires_at", "expires_action")
+		}
+		if !opt.ExpiresAt.After(s.now()) {
+			return Device{}, bad("expires_at", "expires_past")
+		}
 	}
 	reason = strings.TrimSpace(reason)
 	if len([]rune(reason)) > maxReason {
@@ -840,6 +862,10 @@ func (s *Store) Act(deviceID string, action Action, reason string, by audit.Acto
 		} else if action == ActUnblock {
 			d.SavedStatus = ""
 		}
+		if opt.ExpiresAt != nil {
+			t := opt.ExpiresAt.UTC()
+			d.ExpiresAt = &t
+		}
 		d.History = append(d.History, Change{At: now, From: d.Status, To: to, By: actorName(by), Reason: reason})
 		if len(d.History) > maxHistory {
 			d.History = d.History[len(d.History)-maxHistory:]
@@ -851,8 +877,13 @@ func (s *Store) Act(deviceID string, action Action, reason string, by audit.Acto
 	if err != nil {
 		return Device{}, err
 	}
+	var details map[string]any
+	if opt.ExpiresAt != nil {
+		details = map[string]any{"expires_at": after.ExpiresAt.Format(time.RFC3339)}
+	}
 	s.emit(Event{Type: actionEvent[action], Actor: by, CustomerID: cust.ID, CustomerSlug: cust.Slug, CustomerName: cust.Name,
-		DeviceID: after.ID, Worker: after.Worker, From: string(before.Status), To: string(after.Status), Reason: reason})
+		DeviceID: after.ID, Worker: after.Worker, From: string(before.Status), To: string(after.Status), Reason: reason,
+		Details: details})
 	return after, nil
 }
 
