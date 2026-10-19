@@ -19,6 +19,7 @@ import (
 	"github.com/famfamfam/simple-mining-proxy/internal/apierr"
 	"github.com/famfamfam/simple-mining-proxy/internal/events"
 	"github.com/famfamfam/simple-mining-proxy/internal/listener"
+	"github.com/famfamfam/simple-mining-proxy/internal/opshare"
 	"github.com/famfamfam/simple-mining-proxy/internal/pool"
 	"github.com/famfamfam/simple-mining-proxy/internal/session"
 	"github.com/famfamfam/simple-mining-proxy/internal/settings"
@@ -165,6 +166,10 @@ type proxyOpts struct {
 	template string
 	// gate makes the Stratum gate (device control); nil is none.
 	gate func(reg *session.Registry, ev *events.Log, set *settings.Store) session.Gate
+	// operatorUser marks every pool as crediting a second worker with this
+	// login; splitter is the operator's share the sessions ask.
+	operatorUser string
+	splitter     opshare.Splitter
 }
 
 func startProxy(t *testing.T, pools ...*fakePool) *proxy {
@@ -196,11 +201,16 @@ func startProxyWith(t *testing.T, o proxyOpts, pools ...*fakePool) *proxy {
 			acc = o.template
 		}
 		host, port, tls := "127.0.0.1", fp.port(), false
-		if _, err := mgr.Create(pool.Input{Name: &name, Host: &host, Port: &port, TLS: &tls, Username: &acc}); err != nil {
+		in := pool.Input{Name: &name, Host: &host, Port: &port, TLS: &tls, Username: &acc}
+		if o.operatorUser != "" {
+			on, pw := true, "oppw"
+			in.OperatorShare, in.OperatorUser, in.OperatorPassword = &on, &o.operatorUser, &pw
+		}
+		if _, err := mgr.Create(in); err != nil {
 			t.Fatal(err)
 		}
 	}
-	srv := &session.Server{Settings: set, Router: mgr, Registry: reg, Events: ev, Stats: col}
+	srv := &session.Server{Settings: set, Router: mgr, Registry: reg, Events: ev, Stats: col, Splitter: o.splitter}
 	if o.gate != nil {
 		srv.Gate = o.gate(reg, ev, set)
 	}
