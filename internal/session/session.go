@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/famfamfam/simple-mining-proxy/internal/events"
+	"github.com/famfamfam/simple-mining-proxy/internal/opshare"
 	"github.com/famfamfam/simple-mining-proxy/internal/settings"
 	"github.com/famfamfam/simple-mining-proxy/internal/stats"
 	"github.com/famfamfam/simple-mining-proxy/internal/stratum"
@@ -25,13 +26,18 @@ import (
 // Upstream is a connected pool with the pool settings captured at pick time:
 // later edits of the pool apply to new sessions only.
 type Upstream struct {
-	Conn      net.Conn
-	PoolID    string
-	PoolName  string
-	Addr      string // host:port of the pool server
-	Template  string
-	Password  string
-	OnFailure func(UpstreamFailure, error)
+	Conn     net.Conn
+	PoolID   string
+	PoolName string
+	Addr     string // host:port of the pool server
+	Template string
+	Password string
+	// OperatorShare, OperatorUser and OperatorPassword describe the pool's
+	// permission for the operator's second worker and the operator's login.
+	OperatorShare    bool
+	OperatorUser     string
+	OperatorPassword string
+	OnFailure        func(UpstreamFailure, error)
 }
 
 type UpstreamFailure string
@@ -73,6 +79,15 @@ type submitInfo struct {
 	at     time.Time
 	diff   float64
 	worker string // ASIC login the share was sent with
+
+	// The operator's share: track says the share is accounted for it,
+	// operator that it was credited to the operator's worker, in the window
+	// that starts at window.
+	track      bool
+	operator   bool
+	window     int64
+	deviceID   string
+	customerID string
 }
 
 type authInfo struct {
@@ -113,6 +128,11 @@ type Session struct {
 	// devices the devices among them. Both stay empty without device control.
 	authorized map[string]authz
 	devices    map[string]struct{}
+
+	// opAsked is set once the operator's worker was sent to the pool, opReady
+	// once the pool accepted it. Guarded by mu.
+	opAsked bool
+	opReady bool
 
 	// maxLine is max_line_bytes captured at connect time, like the line
 	// readers, so one session never mixes two limits.
@@ -202,6 +222,9 @@ type Server struct {
 	Stats    *stats.Collector
 	// Gate enforces device control; nil lets everybody in.
 	Gate Gate
+	// Splitter is the operator's optional share; nil never routes anything to
+	// the operator.
+	Splitter opshare.Splitter
 	// TLSConfig returns the config for a new TLS connection; nil when the
 	// TLS listener is off.
 	TLSConfig func() *tls.Config
@@ -604,7 +627,11 @@ func (s *Session) authorize(line []byte, msg *stratum.Message) ([]byte, error) {
 	} else {
 		params = append(params, stratum.EncodeString(rw.Password))
 	}
-	return stratum.ReplaceParams(line, params)
+	out, err := stratum.ReplaceParams(line, params)
+	if err != nil || granted == nil {
+		return out, err
+	}
+	return s.withOperatorAuth(out, *granted), nil
 }
 
 // submit rewrites only params[0]; the remaining elements, including the
@@ -620,11 +647,13 @@ func (s *Session) submit(line []byte, msg *stratum.Message) ([]byte, error) {
 	}
 	now := time.Now()
 
+	var a authz
 	if s.gateActive() {
 		// Device control: a share is forwarded only for a login the Gate
 		// allowed, and only while the device may still mine.
+		var allowed bool
 		s.mu.Lock()
-		a, allowed := s.authorized[login]
+		a, allowed = s.authorized[login]
 		s.mu.Unlock()
 		if !ok || !allowed {
 			writeLine(s.miner, reply(msg.ID, nil, "Unauthorized worker"))
@@ -635,6 +664,11 @@ func (s *Session) submit(line []byte, msg *stratum.Message) ([]byte, error) {
 			return nil, &deniedError{code: why, reason: "device may no longer mine"}
 		}
 	}
+
+	// The operator's share: a share inside the operator's window is sent with
+	// the operator's worker, all other shares with the customer's.
+	route := s.operatorRoute(a, now)
+	track := a.deviceID != "" && s.operatorReady()
 
 	s.mu.Lock()
 	s.lastSubmit = now
@@ -648,6 +682,9 @@ func (s *Session) submit(line []byte, msg *stratum.Message) ([]byte, error) {
 			}
 		}
 	}
+	if route.Operator {
+		user = s.up.OperatorUser
+	}
 	if key := msg.IDKey(); key != "" {
 		s.sweepLocked(now)
 		if len(s.pendingSubmit) < maxPendingIDs {
@@ -655,12 +692,15 @@ func (s *Session) submit(line []byte, msg *stratum.Message) ([]byte, error) {
 			if ok {
 				worker = login
 			}
-			s.pendingSubmit[key] = submitInfo{at: now, diff: s.difficulty, worker: worker}
+			s.pendingSubmit[key] = submitInfo{
+				at: now, diff: s.difficulty, worker: worker,
+				track: track, operator: route.Operator, window: route.Window, deviceID: a.deviceID, customerID: a.customerID,
+			}
 		}
 	}
 	s.mu.Unlock()
 
-	if !ok || user == login {
+	if !ok || (user == login && !route.Operator) {
 		return line, nil
 	}
 	params[0] = stratum.EncodeString(user)
@@ -721,6 +761,10 @@ func (s *Session) fromPool(line []byte) ([]byte, error) {
 	if key == "" {
 		return line, nil
 	}
+	if key == opAuthKey {
+		s.operatorAuthAnswer(msg)
+		return nil, nil // the ASIC never asked for it
+	}
 	now := time.Now()
 	s.mu.Lock()
 	if sub, ok := s.pendingSubmit[key]; ok {
@@ -737,6 +781,7 @@ func (s *Session) fromPool(line []byte) ([]byte, error) {
 		}
 		s.mu.Unlock()
 		s.srv.Stats.Share(s.up.PoolID, sub.worker, accepted, sub.diff, reason, now)
+		s.noteShare(sub, accepted, reason, now)
 		return line, nil
 	}
 	auth, isAuth := s.pendingAuth[key]
