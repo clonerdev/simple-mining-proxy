@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -678,5 +679,58 @@ func TestStatusReportsTokenFromEnv(t *testing.T) {
 	b.d.TokenFromEnv = true
 	if !b.Status().TokenFromEnv {
 		t.Fatal("TokenFromEnv is not reported")
+	}
+}
+
+func TestPersian(t *testing.T) {
+	f := newFakeAPI(t)
+	b, _ := newBot(t, f.srv.URL, store(t, map[string]string{"telegram_chats": `"100"`, "telegram_language": `"fa"`}))
+	run(t, b)
+	f.message(100, "/status")
+	got := f.waitSent(t, 1)[0]
+	for _, want := range []string{"نرخ هش: 200 TH/s", "1 از 2", "اصلی", "998 پذیرفته", "2 ساعت ساکت"} {
+		if !strings.Contains(got.Text, want) {
+			t.Errorf("/status has no %q:\n%s", want, got.Text)
+		}
+	}
+}
+
+// Every language must fill every text: an empty one would send a blank line
+// or a bare number to a chat.
+func TestEveryLanguageHasEveryText(t *testing.T) {
+	for _, lang := range []string{"en", "ru", "fa"} {
+		tx := textsFor(lang)
+		v := reflect.ValueOf(*tx)
+		for i := 0; i < v.NumField(); i++ {
+			name := v.Type().Field(i).Name
+			switch f := v.Field(i); f.Kind() {
+			case reflect.String:
+				if f.String() == "" {
+					t.Errorf("%s: text %s is empty", lang, name)
+				}
+			case reflect.Map:
+				if f.Len() == 0 {
+					t.Errorf("%s: table %s is empty", lang, name)
+				}
+				for _, k := range f.MapKeys() {
+					if f.MapIndex(k).String() == "" {
+						t.Errorf("%s: %s[%s] is empty", lang, name, k)
+					}
+				}
+			}
+		}
+		for _, mode := range []string{"NORMAL", "DEGRADED", "DOWN", "SWITCHING"} {
+			if tx.modes[mode] == "" {
+				t.Errorf("%s: no text for mode %s", lang, mode)
+			}
+		}
+		for _, c := range []string{"status", "miners", "help"} {
+			if tx.cmdDesc[c] == "" {
+				t.Errorf("%s: no description for /%s", lang, c)
+			}
+		}
+	}
+	if textsFor("xx") != &textsEN {
+		t.Error("an unknown language must fall back to English")
 	}
 }

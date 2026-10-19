@@ -352,7 +352,7 @@ var Defs = []Def{
 
 	def(Def{
 		Key: "telegram_language", Group: "alerts", Type: TypeEnum,
-		Default: "en", Options: []string{"en", "ru"},
+		Default: "en", Options: []string{"en", "ru", "fa"},
 		Applies: AppliesImmediately,
 	}, str(func(v *Values) *string { return &v.TelegramLanguage })),
 

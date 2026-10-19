@@ -137,9 +137,59 @@ var textsRU = texts{
 	sec: "с", min: "мин", hour: "ч", day: "д",
 }
 
+var textsFA = texts{
+	help: "ربات SimpleMiningProxy.\n\n" +
+		"/status — خلاصه‌ی فارم\n" +
+		"/miners — همه‌ی ماینرها\n\n" +
+		"وقتی یک ماینر شیر نفرستد و وقتی دوباره برگردد، هشدار به اینجا می‌آید.",
+	denied: "این گفت‌وگو اجازه‌ی استفاده از ربات را ندارد. شناسه‌ی آن <code>%d</code> است: آن را در رابط ادمین پروکسی اضافه کنید، " +
+		"تنظیمات ← پایش و هشدارها ← گفت‌وگوهای تلگرام.",
+	test: "✅ پیام آزمایشی از SimpleMiningProxy: هشدارها به این گفت‌وگو می‌آیند.",
+	cmdDesc: map[string]string{
+		"status": "خلاصه‌ی فارم",
+		"miners": "همه‌ی ماینرها",
+		"help":   "دستورها",
+	},
+
+	offline:     "🔴 <b>بدون شیر (%d)</b>",
+	offlineLine: "• <code>%s</code> — %s ساکت، آخرین استخر %s",
+	online:      "🟢 <b>دوباره آنلاین (%d)</b>",
+	onlineLine:  "• <code>%s</code> — %s ساکت بود",
+	mining:      "در حال استخراج: %d از %d ماینر",
+
+	summary:   "📊 <b>فارم</b>",
+	hashrate:  "نرخ هش: %s (۱۰ دقیقه)",
+	asics:     "ماینرها: %d از %d در حال استخراج",
+	pool:      "استخر: %s، %s",
+	solo:      "انفرادی",
+	noPool:    "ندارد",
+	timer:     "زمان‌بند: روی %s، %s دیگر",
+	huntOn:    "شکار XEC: روی %s به مدت %s",
+	huntWait:  "شکار XEC: در انتظار، بلوک اکنون ×%s سخت‌تر از معمول است",
+	huntBlind: "شکار XEC: بلوک‌های eCash اکنون دیده نمی‌شوند",
+	huntDay:   "؛ ۲۴ ساعت گذشته: %s روی XEC، دفعات شکار: %d",
+	shares:    "شیرها از شروع (%s): %d پذیرفته، %d ردشده (%s)",
+	silent:    "🔴 <b>بدون شیر</b>",
+	silentFor: "%s ساکت",
+	noMiners:  "هنوز هیچ ماینری شیر نفرستاده است.",
+	miners:    "⛏ <b>ماینرها (%d)</b>",
+	more:      "… و %d مورد دیگر",
+	modes: map[string]string{
+		"NORMAL":    "اصلی",
+		"DEGRADED":  "پشتیبان: استخر اصلی در دسترس نیست",
+		"DOWN":      "هیچ استخری در دسترس نیست",
+		"SWITCHING": "در حال جابه‌جایی",
+	},
+
+	sec: "ثانیه", min: "دقیقه", hour: "ساعت", day: "روز",
+}
+
 func textsFor(lang string) *texts {
-	if lang == "ru" {
+	switch lang {
+	case "ru":
 		return &textsRU
+	case "fa":
+		return &textsFA
 	}
 	return &textsEN
 }
