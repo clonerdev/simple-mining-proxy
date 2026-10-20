@@ -5,6 +5,7 @@ import { keys } from './api/queries'
 import { Header } from './components/Header'
 import { useHashRoute, type Route } from './hooks/useHashRoute'
 import { DashboardPage } from './pages/DashboardPage'
+import { DevicesPage } from './pages/DevicesPage'
 import { EventsPage } from './pages/EventsPage'
 import { LoginPage } from './pages/LoginPage'
 import { MinersPage } from './pages/MinersPage'
@@ -15,6 +16,7 @@ const pages: Record<Route, () => React.JSX.Element> = {
   dashboard: DashboardPage,
   stats: StatsPage,
   miners: MinersPage,
+  devices: DevicesPage,
   events: EventsPage,
   settings: SettingsPage,
 }

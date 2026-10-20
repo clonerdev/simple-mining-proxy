@@ -1246,3 +1246,52 @@ button.group-head:hover:not(:disabled) .name {
     max-width: none;
   }
 }
+
+/* ---------- customers and devices ---------- */
+
+.section-head {
+  justify-content: space-between;
+  margin-top: 24px;
+}
+
+.section-head h3 {
+  margin: 0;
+}
+
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+}
+
+dl.facts dt {
+  color: var(--muted);
+}
+
+dl.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+ul.history {
+  margin: 0;
+  padding-inline-start: 18px;
+}
+
+code.key {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.bad-text {
+  color: var(--bad);
+}
+
+.warn-text {
+  color: var(--warn);
+}
