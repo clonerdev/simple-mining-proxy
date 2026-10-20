@@ -8,6 +8,7 @@
     "miners": "Miners",
     "devices": "Devices",
     "events": "Events",
+    "audit": "Audit log",
     "settings": "Settings",
     "logout": "Log out",
     "language": "Language",
@@ -947,5 +948,63 @@
     "newKeyBody": "The old key stops working at once: the customer's ASICs must be changed to the new one.",
     "deleteCustomerTitle": "Delete {{name}}?",
     "deleteCustomerBody": "Only a customer without devices can be deleted."
+  },
+  "audit": {
+    "title": "Audit log",
+    "help": "Who did what in the panel and when: logins, devices, customers, settings. Passwords and keys are never recorded.",
+    "range": "Period",
+    "ranges": {
+      "24h": "24 hours",
+      "7d": "7 days",
+      "30d": "30 days",
+      "90d": "90 days"
+    },
+    "groups": {
+      "all": "All actions",
+      "auth": "Logins",
+      "access": "Access denied",
+      "user": "Users",
+      "customer": "Customers",
+      "device": "Devices",
+      "pool": "Pools",
+      "settings": "Settings",
+      "miners": "Miners",
+      "profit": "Profit switching",
+      "timed": "Timed switching",
+      "telegram": "Telegram",
+      "audit": "Audit log"
+    },
+    "results": {
+      "all": "Any result",
+      "ok": "Done",
+      "denied": "Denied",
+      "failed": "Failed"
+    },
+    "actorType": {
+      "user": "User",
+      "env_admin": "Administrator (environment)",
+      "api_token": "API token",
+      "system": "System",
+      "telegram": "Telegram",
+      "device": "Device",
+      "anonymous": "Not signed in"
+    },
+    "time": "Time",
+    "who": "Account",
+    "action": "Action",
+    "target": "On",
+    "result": "Result",
+    "message": "Message",
+    "details": "Details",
+    "actor": "Account name",
+    "actorHelp": "The exact account name, for example admin.",
+    "search": "Text in action, account, target or message",
+    "apply": "Apply",
+    "refresh": "Refresh",
+    "csv": "Download CSV",
+    "csvHelp": "The newest {{n}} entries that match. The export itself is recorded in the log.",
+    "shown": "{{n}} entries shown",
+    "empty": "No entries match.",
+    "older": "Load older entries"
   }
 }

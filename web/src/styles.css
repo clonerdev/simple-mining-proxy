@@ -1295,3 +1295,20 @@ code.key {
 .warn-text {
   color: var(--warn);
 }
+
+pre.audit-details {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-width: 520px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+details > summary {
+  cursor: pointer;
+  color: var(--muted);
+}

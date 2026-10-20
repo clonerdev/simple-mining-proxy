@@ -10,7 +10,9 @@ export function Header({ route }: { route: Route }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const uptime = useStatus().data?.uptime_seconds
+  // A screen is listed only for an account that may read it; the server checks again.
   const seesDevices = useCan('devices.view')
+  const seesAudit = useCan('audit.view')
 
   const logout = async () => {
     try {
@@ -25,7 +27,7 @@ export function Header({ route }: { route: Route }) {
     <header className="top">
       <div className="brand">{t('app.brand')}</div>
       <nav aria-label={t('app.brand')}>
-        {routes.filter((r) => r !== 'devices' || seesDevices).map((r) => (
+        {routes.filter((r) => (r !== 'devices' || seesDevices) && (r !== 'audit' || seesAudit)).map((r) => (
           <a key={r} href={href(r)} className={r === route ? 'active' : undefined} aria-current={r === route ? 'page' : undefined}>
             {t(`nav.${r}`)}
           </a>

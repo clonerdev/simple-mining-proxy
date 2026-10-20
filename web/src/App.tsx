@@ -4,6 +4,7 @@ import { api } from './api/client'
 import { keys } from './api/queries'
 import { Header } from './components/Header'
 import { useHashRoute, type Route } from './hooks/useHashRoute'
+import { AuditPage } from './pages/AuditPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { EventsPage } from './pages/EventsPage'
@@ -18,6 +19,7 @@ const pages: Record<Route, () => React.JSX.Element> = {
   miners: MinersPage,
   devices: DevicesPage,
   events: EventsPage,
+  audit: AuditPage,
   settings: SettingsPage,
 }
 
