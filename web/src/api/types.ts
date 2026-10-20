@@ -508,3 +508,47 @@ export interface Me {
   permissions: string[]
   language?: string
 }
+
+// ---- audit log (internal/audit, internal/admin/users.go) ----
+
+export type AuditResult = 'ok' | 'denied' | 'failed'
+
+export interface AuditActor {
+  /** user, env_admin, api_token, system, telegram, device or anonymous */
+  type: string
+  name?: string
+  id?: string
+  ip?: string
+}
+
+export interface AuditTarget {
+  type?: string
+  id?: string
+  name?: string
+}
+
+export interface AuditEntry {
+  id: string
+  time: string
+  actor: AuditActor
+  /** Dotted, such as device.approve; the start of it names the group. */
+  action: string
+  target?: AuditTarget
+  result: AuditResult
+  message?: string
+  /** Secrets are already replaced by the server. */
+  details?: Record<string, unknown>
+}
+
+/** The filters of GET api/audit. Times are RFC 3339; before pages back to older entries. */
+export interface AuditQuery {
+  from?: string
+  to?: string
+  before?: string
+  actor?: string
+  action?: string
+  target?: string
+  result?: AuditResult
+  q?: string
+  limit?: number
+}

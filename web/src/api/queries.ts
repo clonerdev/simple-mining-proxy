@@ -1,6 +1,7 @@
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import type { EventLevel } from './types'
+import { pageSize } from '../lib/audit'
+import type { AuditQuery, EventLevel } from './types'
 
 /** Live screens refresh every few seconds while the tab is visible. */
 export const POLL_MS = 5000
@@ -15,6 +16,7 @@ export const keys = {
   timed: ['timed'] as const,
   customers: ['customers'] as const,
   devices: ['devices'] as const,
+  audit: (q: AuditQuery) => ['audit', q] as const,
 }
 
 export const useStatus = () => useQuery({ queryKey: keys.status, queryFn: api.status, refetchInterval: POLL_MS })
@@ -102,3 +104,14 @@ export function useRefreshLive() {
     void qc.invalidateQueries({ queryKey: ['events'] })
   }
 }
+
+/** The audit log for a filter: pages of the newest entries first, older ones on request. */
+export const useAudit = (query: AuditQuery) =>
+  useInfiniteQuery({
+    queryKey: keys.audit(query),
+    queryFn: ({ pageParam }) => api.audit({ ...query, before: pageParam, limit: pageSize }).then((r) => r.entries),
+    initialPageParam: undefined as string | undefined,
+    // A full page means there may be older entries; the next one starts before the oldest shown.
+    getNextPageParam: (last) => (last.length >= pageSize ? last.at(-1)?.time : undefined),
+    refetchOnWindowFocus: false,
+  })

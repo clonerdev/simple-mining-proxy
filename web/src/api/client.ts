@@ -1,6 +1,9 @@
+import { csvRows, queryString } from '../lib/audit'
 import type {
   ActivateResult,
   ApiErrorBody,
+  AuditEntry,
+  AuditQuery,
   Customer,
   CustomerInput,
   CustomerList,
@@ -162,4 +165,9 @@ export const api = {
   updateDevice: (id: string, input: { expires_at?: string; max_connections?: number; notes?: string }) =>
     request<Device>('PUT', device(id), input),
   deleteDevice: (id: string) => request<{ ok: boolean }>('DELETE', device(id)),
+
+  /** Newest first; `before` (the time of the oldest entry shown) asks for the next older ones. */
+  audit: (q: AuditQuery) => request<{ entries: AuditEntry[] }>('GET', `api/audit?${queryString(q)}`),
+  /** Where the browser downloads the log as CSV: the newest rows that match, up to the server's limit. */
+  auditCsvUrl: (q: AuditQuery) => `api/audit?${queryString({ ...q, before: undefined }, { format: 'csv', limit: String(csvRows) })}`,
 }
