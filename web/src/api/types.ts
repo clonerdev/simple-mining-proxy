@@ -394,3 +394,117 @@ export interface HuntStatus {
   /** Paused after that failure until then. */
   retry?: string
 }
+
+// ---- customers and devices (internal/admin/devices.go) ----
+
+export type DeviceStatus = 'pending' | 'approved' | 'rejected' | 'suspended' | 'blocked' | 'revoked'
+export type CustomerStatus = 'active' | 'suspended' | 'blocked'
+export type DeviceAction = 'approve' | 'reject' | 'reopen' | 'suspend' | 'resume' | 'block' | 'unblock' | 'revoke'
+
+/** What the Stratum side knows of a customer's or a device's connections right now. */
+export interface LiveStats {
+  sessions: number
+  hashrate_hs: number
+  accepted: number
+  rejected: number
+}
+
+export interface FeeConsent {
+  at: string
+  by: string
+  terms?: string
+  note?: string
+}
+
+export interface Customer {
+  id: string
+  slug: string
+  name: string
+  status: CustomerStatus
+  status_reason?: string
+  status_at?: string
+  account?: string
+  max_devices: number
+  max_connections: number
+  expires_at?: string
+  language?: string
+  notes?: string
+  fee_consent?: FeeConsent
+  key_rotated_at: string
+  created_at: string
+  updated_at: string
+  devices: Partial<Record<DeviceStatus, number>>
+  live: LiveStats
+}
+
+export interface DeviceChange {
+  at: string
+  from: DeviceStatus
+  to: DeviceStatus
+  by: string
+  reason?: string
+}
+
+export interface Device {
+  id: string
+  customer_id: string
+  customer_slug: string
+  customer_name: string
+  worker: string
+  upstream_worker: string
+  status: DeviceStatus
+  status_reason?: string
+  status_by?: string
+  status_at: string
+  expires_at?: string
+  max_connections: number
+  notes?: string
+  user_agent?: string
+  last_ip?: string
+  first_seen: string
+  last_seen: string
+  denied?: number
+  history?: DeviceChange[]
+  live: LiveStats
+  /** Whether the device may mine at this moment, and if not, why (a short key such as device_expired). */
+  usable: boolean
+  why?: string
+}
+
+export interface DeviceCounts {
+  customers: Partial<Record<CustomerStatus, number>>
+  devices: Partial<Record<DeviceStatus, number>>
+}
+
+export interface CustomerList {
+  customers: Customer[]
+  counts: DeviceCounts
+  /** Whether device control is switched on; when it is off nothing below is enforced. */
+  control: boolean
+  languages: string[]
+}
+
+export interface DeviceList {
+  devices: Device[]
+  counts: DeviceCounts
+}
+
+export interface CustomerInput {
+  slug?: string
+  name: string
+  account: string
+  max_devices: number
+  max_connections: number
+  /** RFC 3339; "" clears it; absent leaves it as it is (when editing). */
+  expires_at?: string
+  language: string
+  notes: string
+}
+
+/** The signed-in account (GET api/auth/me). */
+export interface Me {
+  username: string
+  role: string
+  permissions: string[]
+  language?: string
+}

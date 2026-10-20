@@ -1,10 +1,19 @@
 import type {
   ActivateResult,
   ApiErrorBody,
+  Customer,
+  CustomerInput,
+  CustomerList,
+  CustomerStatus,
+  Device,
+  DeviceAction,
+  DeviceList,
+  DeviceStatus,
   DrainResult,
   EventItem,
   EventLevel,
   History,
+  Me,
   Miner,
   Msg,
   NetworkStatus,
@@ -59,9 +68,11 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
 }
 
 const pool = (id: string) => `api/pools/${encodeURIComponent(id)}`
+const customer = (id: string) => `api/customers/${encodeURIComponent(id)}`
+const device = (id: string) => `api/devices/${encodeURIComponent(id)}`
 
 export const api = {
-  me: () => request<{ username: string }>('GET', 'api/auth/me'),
+  me: () => request<Me>('GET', 'api/auth/me'),
   login: (username: string, password: string) =>
     request<{ username: string }>('POST', 'api/auth/login', { username, password }),
   logout: () => request<{ ok: boolean }>('POST', 'api/auth/logout'),
@@ -123,4 +134,32 @@ export const api = {
   /** Sets the bot token after Telegram confirms it; "" removes it. */
   setTelegramToken: (token: string) => request<TelegramStatus>('PUT', 'api/telegram/token', { token }),
   testTelegram: () => request<TelegramStatus>('POST', 'api/telegram/test'),
+
+  customers: () => request<CustomerList>('GET', 'api/customers'),
+  /** The connection key is in the answer once: only its hash is kept. */
+  createCustomer: (input: CustomerInput) => request<{ customer: Customer; key: string }>('POST', 'api/customers', input),
+  updateCustomer: (id: string, input: Partial<CustomerInput>) => request<Customer>('PUT', customer(id), input),
+  setCustomerStatus: (id: string, status: CustomerStatus, reason: string) =>
+    request<Customer>('POST', `${customer(id)}/status`, { status, reason }),
+  rotateCustomerKey: (id: string) => request<{ key: string }>('POST', `${customer(id)}/key`),
+  /** The administrator records (grant) or withdraws the customer's consent to the operator's share. */
+  setFeeConsent: (id: string, grant: boolean, terms: string, note: string) =>
+    request<Customer>('POST', `${customer(id)}/fee-consent`, { grant, terms, note }),
+  deleteCustomer: (id: string) => request<{ ok: boolean }>('DELETE', customer(id)),
+
+  /** status and customer narrow the list; "" means all. */
+  devices: (status: DeviceStatus | '' = '', customerId = '') => {
+    const q = new URLSearchParams()
+    if (status) q.set('status', status)
+    if (customerId) q.set('customer', customerId)
+    const query = q.toString()
+    return request<DeviceList>('GET', `api/devices${query ? `?${query}` : ''}`)
+  },
+  /** expiresAt (RFC 3339) ends the device's access; allowed with approve and resume only. */
+  deviceAction: (id: string, action: DeviceAction, reason = '', expiresAt?: string) =>
+    request<Device>('POST', `${device(id)}/action`, { action, reason, ...(expiresAt ? { expires_at: expiresAt } : {}) }),
+  /** expires_at "" clears the end; absent leaves it. */
+  updateDevice: (id: string, input: { expires_at?: string; max_connections?: number; notes?: string }) =>
+    request<Device>('PUT', device(id), input),
+  deleteDevice: (id: string) => request<{ ok: boolean }>('DELETE', device(id)),
 }

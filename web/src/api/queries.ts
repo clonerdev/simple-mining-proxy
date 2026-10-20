@@ -13,6 +13,8 @@ export const keys = {
   events: (limit: number, level: EventLevel) => ['events', limit, level] as const,
   settings: ['settings'] as const,
   timed: ['timed'] as const,
+  customers: ['customers'] as const,
+  devices: ['devices'] as const,
 }
 
 export const useStatus = () => useQuery({ queryKey: keys.status, queryFn: api.status, refetchInterval: POLL_MS })
@@ -67,6 +69,28 @@ export const useTimed = () => useQuery({ queryKey: keys.timed, queryFn: api.time
 // Settings are edited in place: loaded when the screen opens, never polled.
 export const useSettings = () =>
   useQuery({ queryKey: keys.settings, queryFn: api.settings, refetchOnWindowFocus: false })
+
+export const useCustomers = () => useQuery({ queryKey: keys.customers, queryFn: api.customers, refetchInterval: POLL_MS })
+
+export const useDevices = () => useQuery({ queryKey: keys.devices, queryFn: () => api.devices(), refetchInterval: POLL_MS })
+
+/** Refetches what a change of a customer or a device can affect. */
+export function useRefreshDevices() {
+  const qc = useQueryClient()
+  return () => {
+    void qc.invalidateQueries({ queryKey: keys.customers })
+    void qc.invalidateQueries({ queryKey: keys.devices })
+    void qc.invalidateQueries({ queryKey: ['events'] })
+  }
+}
+
+/** The signed-in account, from the session check that gates the whole app. */
+export const useMe = () => useQuery({ queryKey: keys.me, queryFn: api.me, retry: false, staleTime: Infinity })
+
+/** Whether the signed-in account holds a permission (the server checks it again on every call). */
+export function useCan(permission: string): boolean {
+  return useMe().data?.permissions.includes(permission) ?? false
+}
 
 /** Refetches everything that a pool or session change can affect. */
 export function useRefreshLive() {
