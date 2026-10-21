@@ -17,6 +17,8 @@ export const keys = {
   customers: ['customers'] as const,
   devices: ['devices'] as const,
   audit: (q: AuditQuery) => ['audit', q] as const,
+  operatorUsage: (from: string, to: string, customerId: string) => ['operator-usage', from, to, customerId] as const,
+  operatorPools: ['operator-pools'] as const,
 }
 
 export const useStatus = () => useQuery({ queryKey: keys.status, queryFn: api.status, refetchInterval: POLL_MS })
@@ -115,3 +117,16 @@ export const useAudit = (query: AuditQuery) =>
     getNextPageParam: (last) => (last.length >= pageSize ? last.at(-1)?.time : undefined),
     refetchOnWindowFocus: false,
   })
+
+/** The account of the operator's share for days from..to (UTC) and one customer ("" is all). */
+export const useOperatorUsage = (from: string, to: string, customerId: string) =>
+  useQuery({
+    queryKey: keys.operatorUsage(from, to, customerId),
+    queryFn: () => api.operatorUsage(from, to, customerId),
+    refetchInterval: POLL_MS * 6,
+    placeholderData: keepPreviousData,
+  })
+
+/** The switch of the share and the pools it switched itself off on. */
+export const useOperatorPools = () =>
+  useQuery({ queryKey: keys.operatorPools, queryFn: api.operatorPools, refetchInterval: POLL_MS })

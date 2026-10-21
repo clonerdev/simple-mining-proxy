@@ -75,6 +75,13 @@ export interface Pool {
   solo: boolean
   /** The main pool profit switching returns to; one pool at most. */
   profit_home: boolean
+  /**
+   * The pool credits the operator's own worker on the same connection (the
+   * operator's share). Off unless it was checked that the pool does so.
+   */
+  operator_share: boolean
+  operator_user?: string
+  operator_password_set: boolean
   role: Role
   fallback_position?: number
   health: Health
@@ -99,6 +106,10 @@ export interface PoolInput {
   profit_switch?: boolean
   timed_target?: boolean
   solo?: boolean
+  operator_share?: boolean
+  operator_user?: string
+  /** "" removes it; absent leaves it as it is. */
+  operator_password?: string
 }
 
 export interface TestResult {
@@ -551,4 +562,44 @@ export interface AuditQuery {
   result?: AuditResult
   q?: string
   limit?: number
+}
+
+// ---- the operator's share: its account (internal/opshare, internal/admin/opshare.go) ----
+
+/** The account of one device for one UTC day. Work only: no money is counted. */
+export interface DayUsage {
+  day: string
+  customer_id: string
+  device_id: string
+  rule_id?: string
+  /** Windows of the operator that carried at least one share, and their total length. */
+  windows: number
+  allocated_seconds: number
+  operator_accepted: number
+  operator_rejected: number
+  operator_difficulty: number
+  customer_accepted: number
+  customer_rejected: number
+  customer_difficulty: number
+}
+
+export interface OperatorUsage {
+  from: string
+  to: string
+  rows: DayUsage[]
+}
+
+/** A pool the share switched itself off on. */
+export interface OperatorPoolOff {
+  pool_id: string
+  off: boolean
+  since?: string
+  until?: string
+  reason?: string
+}
+
+export interface OperatorPools {
+  /** The proxy-wide switch (Settings, Operator share). */
+  active: boolean
+  pools_off: OperatorPoolOff[]
 }

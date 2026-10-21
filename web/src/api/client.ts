@@ -20,6 +20,8 @@ import type {
   Miner,
   Msg,
   NetworkStatus,
+  OperatorPools,
+  OperatorUsage,
   Pool,
   PoolInput,
   ProfitStatus,
@@ -170,4 +172,13 @@ export const api = {
   audit: (q: AuditQuery) => request<{ entries: AuditEntry[] }>('GET', `api/audit?${queryString(q)}`),
   /** Where the browser downloads the log as CSV: the newest rows that match, up to the server's limit. */
   auditCsvUrl: (q: AuditQuery) => `api/audit?${queryString({ ...q, before: undefined }, { format: 'csv', limit: String(csvRows) })}`,
+
+  /** The account of the operator's share, one row per device and UTC day (2006-01-02, both ends included). */
+  operatorUsage: (from: string, to: string, customerId = '') => {
+    const q = new URLSearchParams({ from, to })
+    if (customerId) q.set('customer', customerId)
+    return request<OperatorUsage>('GET', `api/operator-share/usage?${q.toString()}`)
+  },
+  /** The proxy-wide switch of the share and the pools it switched itself off on. */
+  operatorPools: () => request<OperatorPools>('GET', 'api/operator-share/pools'),
 }
