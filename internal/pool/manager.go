@@ -403,7 +403,7 @@ func (m *Manager) TestOperator(ctx context.Context, baseID string, in Input) ([]
 		return nil, err
 	}
 	if p.OperatorUser == "" {
-		return nil, apierr.Validation(apierr.M("validation_failed", "invalid pool settings"), map[string]apierr.Msg{
+		return nil, apierr.Validation(apierr.M("pool_invalid", "invalid pool fields"), map[string]apierr.Msg{
 			"operator_user": apierr.M("operator_login_required", "enter the operator's login on this pool first"),
 		})
 	}

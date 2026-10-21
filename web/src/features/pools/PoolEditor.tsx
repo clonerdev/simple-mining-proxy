@@ -7,6 +7,7 @@ import { Modal } from '../../components/Modal'
 import { useToast } from '../../context/feedback'
 import { errorText, translateMsg } from '../../i18n/messages'
 import { hostPort, parseAddresses, type ParsedAddresses } from '../../lib/addresses'
+import { OperatorProbeDialog } from './OperatorProbeDialog'
 import { TestDialog } from './TestDialog'
 
 const coins = ['BTC', 'BCH', 'BSV', 'XEC', 'DGB', 'FB']
@@ -61,6 +62,7 @@ export function PoolEditor({ pool, onClose }: { pool: Pool | null; onClose: () =
   const [schemeNote, setSchemeNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [testRun, setTestRun] = useState<PoolInput | null>(null)
+  const [probeRun, setProbeRun] = useState<PoolInput | null>(null)
 
   const addressError = (p: ParsedAddresses) =>
     p.ok ? '' : p.error === 'empty' ? t('editor.addressEmpty') : t('editor.addressLine', { line: p.line, text: p.text })
@@ -147,6 +149,15 @@ export function PoolEditor({ pool, onClose }: { pool: Pool | null; onClose: () =
     setTestRun(pool ? { ...body, id: pool.id } : body)
   }
   const runTest = useCallback(() => api.testConfig(testRun ?? {}), [testRun])
+  // The second-worker probe needs the operator's login, so it is asked for only with the share on.
+  const probe = () => {
+    const body = collect()
+    if (!body) return
+    setErrors({})
+    // The password is sent only when typed here; otherwise the saved one is used (the pool id names it).
+    setProbeRun(pool ? { ...body, id: pool.id, operator_share: true } : { ...body, operator_share: true })
+  }
+  const runProbe = useCallback(() => api.testOperator(probeRun ?? {}), [probeRun])
 
   const preview = (username || 'account.{worker}').replaceAll('{worker}', 'S21-0042').replaceAll('{login}', 'farm.S21-0042')
 
@@ -311,6 +322,13 @@ export function PoolEditor({ pool, onClose }: { pool: Pool | null; onClose: () =
                 </span>
               )}
             </Field>
+            <span />
+            <div className="actions">
+              <button type="button" onClick={probe} disabled={busy}>
+                {t('probe.button')}
+              </button>
+              <span className="small muted">{t('probe.buttonHelp')}</span>
+            </div>
           </>
         )}
         {pool && pool.sessions > 0 && (
@@ -324,6 +342,7 @@ export function PoolEditor({ pool, onClose }: { pool: Pool | null; onClose: () =
         )}
         <button type="submit" hidden />
       </form>
+      {probeRun && <OperatorProbeDialog run={runProbe} onClose={() => setProbeRun(null)} />}
       {testRun && (
         <TestDialog
           title={pool ? t('test.title', { pool: name || pool.name }) : t('test.unsaved')}

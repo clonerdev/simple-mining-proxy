@@ -31,6 +31,7 @@ import type {
   Status,
   TelegramStatus,
   TestResult,
+  OperatorProbe,
   TimedStatus,
   WorkerSeries,
   WorkerSummary,
@@ -96,6 +97,7 @@ export const api = {
   testPool: (id: string) => request<TestResult>('POST', `${pool(id)}/test`),
   /** Checks editor fields before saving; id names the saved pool they apply to. */
   testConfig: (input: PoolInput) => request<TestResult>('POST', 'api/pools/test', input),
+  testOperator: (input: PoolInput) => request<OperatorProbe>('POST', 'api/pools/test-operator', input),
   activatePool: (id: string, force: boolean) =>
     request<ActivateResult>('POST', `${pool(id)}/activate${force ? '?force=true' : ''}`),
   setFallback: (ids: string[]) => request<{ pools: Pool[] }>('PUT', 'api/fallback', { pools: ids }),

@@ -118,6 +118,23 @@ export interface TestResult {
   addresses: (Address & { ok: boolean; latency_ms: number | null; error?: string })[]
 }
 
+export type OperatorStepId = 'connect' | 'subscribe' | 'authorize' | 'job' | 'operator_authorize' | 'connection_open'
+export type OperatorVerdict = 'authorize_accepted' | 'refused' | 'no_answer' | 'closed' | 'not_reached'
+
+export interface OperatorProbe {
+  ok: boolean
+  /** Always false: the probe sends no share, so only the pool's own page shows credit. */
+  credit_verified: boolean
+  elapsed_ms: number
+  addresses: {
+    host: string
+    port: number
+    verdict: OperatorVerdict
+    latency_ms: number | null
+    steps: { id: OperatorStepId; ok: boolean; skipped?: boolean; detail?: string }[]
+  }[]
+}
+
 export interface Miner {
   id: number
   worker: string

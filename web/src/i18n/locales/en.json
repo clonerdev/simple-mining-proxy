@@ -665,7 +665,8 @@
     "device_expires_invalid": "Use a date and time like 2027-01-31T00:00:00Z",
     "operator_share_unavailable": "The operator share is not available on this server.",
     "bad_date": "{{name}} must be a date like 2006-01-02.",
-    "bad_range": "The end date is before the start date."
+    "bad_range": "The end date is before the start date.",
+    "operator_login_required": "Enter the operator's login on this pool first"
   },
   "stats": {
     "title": "Charts",
@@ -1067,5 +1068,38 @@
     "device": "Device",
     "empty": "No operator-share activity in this period.",
     "emptyHelp": "That is expected while the share is off, no pool is marked for it, or no customer has given consent: nothing is taken in any of these cases."
+  },
+  "probe": {
+    "title": "Second worker check",
+    "running": "Connecting, authorizing the test worker, then the operator's worker on the same connection…",
+    "button": "Check second worker",
+    "buttonHelp": "Sends no share. Use a test account.",
+    "skipped": "not tried",
+    "verdict": {
+      "authorize_accepted": "Second authorize accepted",
+      "refused": "Refused",
+      "no_answer": "No answer",
+      "closed": "Connection closed",
+      "not_reached": "Not reached"
+    },
+    "step": {
+      "connect": "Connect",
+      "subscribe": "mining.subscribe",
+      "authorize": "Authorize the test worker",
+      "job": "Receive a job",
+      "operator_authorize": "Authorize the operator's worker (same connection)",
+      "connection_open": "Connection stays open"
+    },
+    "advice": {
+      "refused": "The pool does not accept a second worker on one connection. Keep operator share off on this pool.",
+      "no_answer": "The pool ignores the second authorize. Keep operator share off on this pool.",
+      "closed": "The pool drops the connection after a second authorize, which would cost the customer their session. Keep operator share off on this pool.",
+      "not_reached": "A step before the second authorize failed, so the question was not asked. Fix that first (see the normal check)."
+    },
+    "notProvedTitle": "This does not prove that shares are credited.",
+    "notProved": "The check sends no share. A pool can accept the second login and still credit every share to the first worker. Until you have seen it credited, do not rely on operator share on this pool.",
+    "how1": "Use a test account on this pool, never a customer's.",
+    "how2": "Mine briefly through the proxy with operator share on and consent recorded for the test device.",
+    "how3": "Open the pool's dashboard: the operator's worker must show accepted shares of its own."
   }
 }
