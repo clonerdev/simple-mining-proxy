@@ -74,6 +74,11 @@ export function PoolsTable({ pools, onSwitch, onTest, onEdit, onDelete }: PoolsT
                   <span className="badge" title={t('pools.timedTargetHint')}>
                     {t('pools.timedTarget')}
                   </span>
+                )}{' '}
+                {p.operator_share && (
+                  <span className="badge" title={t('pools.operatorShareHint')}>
+                    {t('pools.operatorShare')}
+                  </span>
                 )}
                 <AddressList pool={p} />
               </td>

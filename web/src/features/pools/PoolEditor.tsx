@@ -11,7 +11,12 @@ import { TestDialog } from './TestDialog'
 
 const coins = ['BTC', 'BCH', 'BSV', 'XEC', 'DGB', 'FB']
 
-type Errors = Partial<Record<'name' | 'coin' | 'addresses' | 'username' | 'password' | 'tls_skip_verify', string>>
+type Errors = Partial<
+  Record<
+    'name' | 'coin' | 'addresses' | 'username' | 'password' | 'tls_skip_verify' | 'operator_share' | 'operator_user' | 'operator_password',
+    string
+  >
+>
 
 function Field({ label, error, help, children }: { label: string; error?: string; help?: ReactNode; children: ReactNode }) {
   return (
@@ -46,6 +51,12 @@ export function PoolEditor({ pool, onClose }: { pool: Pool | null; onClose: () =
   const [profitSwitch, setProfitSwitch] = useState(pool?.profit_switch ?? false)
   const [timedTarget, setTimedTarget] = useState(pool?.timed_target ?? false)
   const [solo, setSolo] = useState(pool?.solo ?? false)
+  const [operatorShare, setOperatorShare] = useState(pool?.operator_share ?? false)
+  const [operatorUser, setOperatorUser] = useState(pool?.operator_user ?? '')
+  // The operator's password is write-only like the pool's: only a new one is sent.
+  // Like the pool's own, a new one starts as "x": a pool takes any password, and some refuse an empty one.
+  const [changeOperatorPassword, setChangeOperatorPassword] = useState(!pool?.operator_password_set)
+  const [operatorPassword, setOperatorPassword] = useState(pool?.operator_password_set ? '' : 'x')
   const [errors, setErrors] = useState<Errors>({})
   const [schemeNote, setSchemeNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -71,6 +82,10 @@ export function PoolEditor({ pool, onClose }: { pool: Pool | null; onClose: () =
       setErrors({ addresses: addressError(parsed) })
       return null
     }
+    if (operatorShare && !operatorUser.trim()) {
+      setErrors({ operator_user: t('editor.operatorLoginRequired') })
+      return null
+    }
     const body: PoolInput = {
       name,
       coin,
@@ -81,8 +96,12 @@ export function PoolEditor({ pool, onClose }: { pool: Pool | null; onClose: () =
       profit_switch: profitSwitch && !solo,
       timed_target: timedTarget,
       solo,
+      operator_share: operatorShare,
+      operator_user: operatorUser.trim(),
     }
     if (changePassword) body.password = password
+    // Only while the share is on: with it off nothing of the operator's is used, and a stored password stays as it is.
+    if (operatorShare && changeOperatorPassword) body.operator_password = operatorPassword
     return body
   }
 
@@ -251,6 +270,49 @@ export function PoolEditor({ pool, onClose }: { pool: Pool | null; onClose: () =
           </label>
           <div className="small muted">{t('editor.timedHelp')}</div>
         </div>
+        <span className="form-label">{t('editor.operator')}</span>
+        <div className="form-field">
+          <label>
+            <input type="checkbox" checked={operatorShare} onChange={(e) => setOperatorShare(e.target.checked)} />{' '}
+            {t('editor.operatorShare')}
+          </label>
+          <div className="small muted">{t('editor.operatorHelp')}</div>
+          {errors.operator_share && <div className="field-error">{errors.operator_share}</div>}
+        </div>
+        {operatorShare && (
+          <>
+            <span />
+            <div className="warnbox">{t('editor.operatorWarning')}</div>
+            <Field label={t('editor.operatorUser')} error={errors.operator_user} help={t('editor.operatorUserHelp')}>
+              <input
+                type="text"
+                className="mono"
+                value={operatorUser}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => setOperatorUser(e.target.value)}
+              />
+            </Field>
+            <Field label={t('editor.operatorPassword')} error={errors.operator_password} help={t('editor.operatorPasswordHelp')}>
+              {changeOperatorPassword ? (
+                <input
+                  type="text"
+                  value={operatorPassword}
+                  autoComplete="off"
+                  placeholder="x"
+                  onChange={(e) => setOperatorPassword(e.target.value)}
+                />
+              ) : (
+                <span>
+                  ••••• ({t('editor.passwordSet')}){' '}
+                  <button type="button" className="link" onClick={() => setChangeOperatorPassword(true)}>
+                    {t('editor.passwordChange')}
+                  </button>
+                </span>
+              )}
+            </Field>
+          </>
+        )}
         {pool && pool.sessions > 0 && (
           <>
             <span />

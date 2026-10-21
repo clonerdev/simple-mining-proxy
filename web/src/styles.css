@@ -1312,3 +1312,11 @@ details > summary {
   cursor: pointer;
   color: var(--muted);
 }
+
+details.share-days {
+  margin-top: 16px;
+}
+
+details.share-days > summary {
+  margin-bottom: 8px;
+}

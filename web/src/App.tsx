@@ -11,6 +11,7 @@ import { EventsPage } from './pages/EventsPage'
 import { LoginPage } from './pages/LoginPage'
 import { MinersPage } from './pages/MinersPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { SharePage } from './pages/SharePage'
 import { StatsPage } from './pages/StatsPage'
 
 const pages: Record<Route, () => React.JSX.Element> = {
@@ -18,6 +19,7 @@ const pages: Record<Route, () => React.JSX.Element> = {
   stats: StatsPage,
   miners: MinersPage,
   devices: DevicesPage,
+  share: SharePage,
   events: EventsPage,
   audit: AuditPage,
   settings: SettingsPage,
