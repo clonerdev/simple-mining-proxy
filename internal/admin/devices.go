@@ -97,6 +97,7 @@ type customerView struct {
 	Language       string                       `json:"language,omitempty"`
 	Notes          string                       `json:"notes,omitempty"`
 	FeeConsent     *devices.FeeConsent          `json:"fee_consent,omitempty"`
+	OperatorShare  *devices.ShareRule           `json:"operator_share,omitempty"`
 	KeyRotatedAt   time.Time                    `json:"key_rotated_at"`
 	CreatedAt      time.Time                    `json:"created_at"`
 	UpdatedAt      time.Time                    `json:"updated_at"`
@@ -116,7 +117,7 @@ func (s *Server) customerViewOf(c devices.Customer, devs []devices.Device, lv ma
 	v := customerView{
 		ID: c.ID, Slug: c.Slug, Name: c.Name, Status: c.Status, StatusReason: c.StatusReason, StatusAt: timePtr(c.StatusAt),
 		Account: c.Account, MaxDevices: c.MaxDevices, MaxConnections: c.MaxConnections, ExpiresAt: c.ExpiresAt,
-		Language: c.Language, Notes: c.Notes, FeeConsent: c.FeeConsent, KeyRotatedAt: c.KeyRotatedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		Language: c.Language, Notes: c.Notes, FeeConsent: c.FeeConsent, OperatorShare: c.OperatorShare, KeyRotatedAt: c.KeyRotatedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 		Devices: map[devices.DeviceStatus]int{},
 	}
 	for _, d := range devs {
@@ -320,6 +321,57 @@ func (s *Server) feeConsent(w http.ResponseWriter, r *http.Request) error {
 	}
 	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
 	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv))
+	return nil
+}
+
+// shareBody is the body of the calls that set the size of the operator's
+// share: a kind and an amount, or "inherit" to go back to the wider rule.
+type shareBody struct {
+	Inherit bool    `json:"inherit"`
+	Kind    string  `json:"kind"`
+	Amount  float64 `json:"amount"`
+}
+
+func (b shareBody) rule() *devices.ShareRule {
+	if b.Inherit {
+		return nil
+	}
+	return &devices.ShareRule{Kind: b.Kind, Amount: b.Amount}
+}
+
+// customerShare sets the size of the operator's share for a customer. It is
+// money-adjacent, so it needs billing.manage; it never records consent.
+func (s *Server) customerShare(w http.ResponseWriter, r *http.Request) error {
+	if s.d.Devices == nil {
+		return errNoDevices
+	}
+	var in shareBody
+	if err := decode(r, &in); err != nil {
+		return err
+	}
+	c, err := s.d.Devices.SetCustomerShare(r.PathValue("id"), in.rule(), principalOf(r).actor(clientIP(r)))
+	if err != nil {
+		return devicesErr(err)
+	}
+	lv, devs := s.liveByDevice(time.Now()), s.d.Devices.Devices(devices.Filter{CustomerID: c.ID})
+	writeJSON(w, http.StatusOK, s.customerViewOf(c, devs, lv))
+	return nil
+}
+
+// deviceShare is customerShare for one device; its rule comes first.
+func (s *Server) deviceShare(w http.ResponseWriter, r *http.Request) error {
+	if s.d.Devices == nil {
+		return errNoDevices
+	}
+	var in shareBody
+	if err := decode(r, &in); err != nil {
+		return err
+	}
+	d, err := s.d.Devices.SetDeviceShare(r.PathValue("id"), in.rule(), principalOf(r).actor(clientIP(r)))
+	if err != nil {
+		return devicesErr(err)
+	}
+	writeJSON(w, http.StatusOK, s.deviceViewOf(d, s.liveByDevice(time.Now())))
 	return nil
 }
 

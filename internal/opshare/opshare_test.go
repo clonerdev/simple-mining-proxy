@@ -405,3 +405,49 @@ func TestFlatRulesFollowTheSettingsLive(t *testing.T) {
 		t.Fatalf("no source must give no share, got %+v", d)
 	}
 }
+
+type fakeOverrides map[Subject]Override
+
+func (f fakeOverrides) Override(s Subject) (Override, bool) {
+	// The device's rule comes before the customer's, as in the store.
+	if o, ok := f[Subject{CustomerID: s.CustomerID, DeviceID: s.DeviceID}]; ok {
+		return o, true
+	}
+	o, ok := f[Subject{CustomerID: s.CustomerID}]
+	return o, ok
+}
+
+func TestScopedRulesMostSpecificWins(t *testing.T) {
+	base := FlatRules{Fraction: func() float64 { return 0.05 }}
+	r := ScopedRules{Base: base, Overrides: fakeOverrides{
+		{CustomerID: "c1"}:                 {Fraction: 0.02, Level: "customer"},
+		{CustomerID: "c1", DeviceID: "d2"}: {Fraction: 0, Level: "device"},
+		{CustomerID: "c2", DeviceID: "d9"}: {Fraction: 0.08, Level: "device"},
+	}}
+	now := time.Now()
+	for _, tc := range []struct {
+		sub  Subject
+		frac float64
+		rule string
+	}{
+		{Subject{CustomerID: "c1", DeviceID: "d1"}, 0.02, "customer"}, // the customer's rule
+		{Subject{CustomerID: "c1", DeviceID: "d2"}, 0, "device"},      // a device left out
+		{Subject{CustomerID: "c2", DeviceID: "d9"}, 0.08, "device"},
+		{Subject{CustomerID: "c2", DeviceID: "d8"}, 0.05, "global"}, // nothing set: the setting
+	} {
+		d := r.Share(tc.sub, now)
+		if d.Fraction != tc.frac || d.RuleID != tc.rule {
+			t.Errorf("%+v: got %+v, want %v from %s", tc.sub, d, tc.frac, tc.rule)
+		}
+	}
+}
+
+func TestScopedRulesWithoutOverridesOrBase(t *testing.T) {
+	if d := (ScopedRules{}).Share(Subject{}, time.Now()); d.Fraction != 0 {
+		t.Fatalf("got %+v", d)
+	}
+	base := FlatRules{Fraction: func() float64 { return 0.03 }}
+	if d := (ScopedRules{Base: base}).Share(Subject{}, time.Now()); d.Fraction != 0.03 {
+		t.Fatalf("got %+v", d)
+	}
+}

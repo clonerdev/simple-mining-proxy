@@ -143,6 +143,8 @@ func New(d Deps) http.Handler {
 	api("POST /api/customers/{id}/status", devEdit, s.setCustomerStatus)
 	api("POST /api/customers/{id}/key", devEdit, s.rotateCustomerKey)
 	api("POST /api/customers/{id}/fee-consent", billEdit, s.feeConsent)
+	api("PUT /api/customers/{id}/operator-share", billEdit, s.customerShare)
+	api("PUT /api/devices/{id}/operator-share", billEdit, s.deviceShare)
 	api("DELETE /api/customers/{id}", devEdit, s.deleteCustomer)
 	api("GET /api/devices", devView, s.listDevices)
 	api("POST /api/devices/{id}/action", devEdit, s.actOnDevice)

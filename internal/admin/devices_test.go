@@ -342,3 +342,64 @@ func TestApproveADeviceForAMonthThroughTheAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingTheOperatorShareOfACustomerAndADevice(t *testing.T) {
+	e := newDevEnv(t)
+	c, _ := e.customerVia(t, bearer, `{"slug":"acme","name":"Acme"}`)
+	cid := c["id"].(string)
+	d := e.pending(t, cid, "rack1")
+	e.create(t, `{"username":"nobill","role":"operator","revoke":["billing.manage"],"password":"`+userPass+`"}`)
+	nobill := e.login(t, "nobill", userPass)
+
+	// It is a billing matter: without billing.manage nothing changes.
+	for _, r := range [][2]string{{"/api/customers/" + cid + "/operator-share", `{"kind":"percent","amount":3}`}, {"/api/devices/" + d.ID + "/operator-share", `{"kind":"percent","amount":3}`}} {
+		if w := e.do("PUT", r[0], r[1], nobill); w.Code != http.StatusForbidden {
+			t.Errorf("%s without billing.manage: %d, want 403", r[0], w.Code)
+		}
+	}
+	if _, _, ok := e.ds.OperatorRule(cid, d.ID); ok {
+		t.Fatal("a forbidden call set a rule")
+	}
+
+	// A customer's rule, seen in the customer's view; the device inherits it.
+	w := e.do("PUT", "/api/customers/"+cid+"/operator-share", `{"kind":"percent","amount":3}`, bearer)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"operator_share":{"kind":"percent","amount":3}`) {
+		t.Fatalf("customer rule: %d %s", w.Code, w.Body)
+	}
+	if r, lvl, ok := e.ds.OperatorRule(cid, d.ID); !ok || lvl != "customer" || r.Amount != 3 {
+		t.Fatalf("got %+v %s %v", r, lvl, ok)
+	}
+
+	// A device left out (0) comes before the customer's rule.
+	w = e.do("PUT", "/api/devices/"+d.ID+"/operator-share", `{"kind":"minutes_per_day","amount":0}`, bearer)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"operator_share":{"kind":"minutes_per_day","amount":0}`) {
+		t.Fatalf("device rule: %d %s", w.Code, w.Body)
+	}
+	if _, lvl, _ := e.ds.OperatorRule(cid, d.ID); lvl != "device" {
+		t.Fatalf("level %s", lvl)
+	}
+
+	// Nonsense is a validation error on the field and changes nothing.
+	for _, body := range []string{`{"kind":"percent","amount":101}`, `{"kind":"dollars","amount":1}`, `{}`} {
+		w := e.do("PUT", "/api/customers/"+cid+"/operator-share", body, bearer)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "operator_share") {
+			t.Errorf("%s: %d %s", body, w.Code, w.Body)
+		}
+	}
+	if r, _, _ := e.ds.OperatorRule(cid, "none"); r.Amount != 3 {
+		t.Fatalf("a bad body changed the rule: %+v", r)
+	}
+
+	// Inherit removes both again, and the setting applies.
+	for _, p := range []string{"/api/devices/" + d.ID, "/api/customers/" + cid} {
+		if w := e.do("PUT", p+"/operator-share", `{"inherit":true}`, bearer); w.Code != 200 || strings.Contains(w.Body.String(), "operator_share") {
+			t.Fatalf("inherit %s: %d %s", p, w.Code, w.Body)
+		}
+	}
+	if _, _, ok := e.ds.OperatorRule(cid, d.ID); ok {
+		t.Fatal("inherit left a rule")
+	}
+	if w := e.do("PUT", "/api/devices/nope/operator-share", `{"inherit":true}`, bearer); w.Code != http.StatusNotFound {
+		t.Fatalf("unknown device: %d", w.Code)
+	}
+}

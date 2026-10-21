@@ -26,6 +26,7 @@ var Messages = map[string]string{
 	"devices_many":          "at most {max} devices",
 	"reason_long":           "at most {max} characters",
 	"expires_past":          "the expiry must be a time in the future",
+	"share_invalid":         "a share is a percent from 0 to 100, or minutes per day from 0 to 1440",
 	"expires_action":        "an expiry can be set only together with approve or resume",
 }
 

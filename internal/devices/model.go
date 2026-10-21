@@ -133,6 +133,10 @@ type Customer struct {
 	// say: the Stratum side checks it on every share.
 	FeeConsent *FeeConsent `json:"fee_consent,omitempty"`
 
+	// OperatorShare is this customer's own size of the operator's share. Nil
+	// means the proxy-wide setting applies. It never replaces the consent.
+	OperatorShare *ShareRule `json:"operator_share,omitempty"`
+
 	// KeySalt and KeyHash check the connection key; the key itself is shown
 	// once, when it is made, and is not kept.
 	KeySalt      string    `json:"key_salt"`
@@ -141,6 +145,44 @@ type Customer struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Kinds of a ShareRule, as in the proxy-wide settings.
+const (
+	ShareKindPercent = "percent"
+	ShareKindMinutes = "minutes_per_day"
+)
+
+// ShareRule is the size of the operator's share of the mining time: a percent,
+// or minutes of mining per day. An amount of 0 means no share at all, which is
+// how one customer or device is left out when the proxy-wide setting is on.
+type ShareRule struct {
+	Kind   string  `json:"kind"`
+	Amount float64 `json:"amount"`
+}
+
+// Valid reports whether the rule is one a person could mean: a known kind and
+// an amount from 0 to the whole (100 %, or 1440 minutes).
+func (r ShareRule) Valid() bool {
+	switch r.Kind {
+	case ShareKindPercent:
+		return r.Amount >= 0 && r.Amount <= 100
+	case ShareKindMinutes:
+		return r.Amount >= 0 && r.Amount <= 24*60
+	}
+	return false
+}
+
+// Fraction is the share of the mining time, 0 to 1. The proxy-wide cap still
+// applies to it where the share is used.
+func (r ShareRule) Fraction() float64 {
+	if !r.Valid() {
+		return 0
+	}
+	if r.Kind == ShareKindMinutes {
+		return r.Amount / (24 * 60)
+	}
+	return r.Amount / 100
 }
 
 // FeeConsent is the customer's agreement to the operator's share of their
@@ -189,6 +231,10 @@ type Device struct {
 	// means one, which a reconnecting ASIC replaces.
 	MaxConnections int    `json:"max_connections"`
 	Notes          string `json:"notes,omitempty"`
+
+	// OperatorShare is the size of the operator's share for this device alone.
+	// Nil means the customer's rule, then the proxy-wide setting, applies.
+	OperatorShare *ShareRule `json:"operator_share,omitempty"`
 
 	UserAgent string    `json:"user_agent,omitempty"`
 	LastIP    string    `json:"last_ip,omitempty"`

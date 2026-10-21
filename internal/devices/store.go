@@ -6,12 +6,14 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/famfamfam/simple-mining-proxy/internal/audit"
+	"github.com/famfamfam/simple-mining-proxy/internal/opshare"
 	"github.com/famfamfam/simple-mining-proxy/internal/store"
 )
 
@@ -562,6 +564,91 @@ func (s *Store) SetFeeConsent(id string, grant bool, terms, note string, by audi
 	return after, nil
 }
 
+func shareText(r *ShareRule) string {
+	if r == nil {
+		return "inherit"
+	}
+	return fmt.Sprintf("%s %g", r.Kind, r.Amount)
+}
+
+// SetCustomerShare sets the customer's own size of the operator's share, or
+// (rule nil) returns the customer to the proxy-wide setting. It changes only the
+// size: the consent of the customer is still needed for any share.
+func (s *Store) SetCustomerShare(id string, rule *ShareRule, by audit.Actor) (Customer, error) {
+	if rule != nil && !rule.Valid() {
+		return Customer{}, bad("operator_share", "share_invalid")
+	}
+	before, after, err := s.mutateCustomer(id, func(c *Customer) *Error {
+		if rule == nil {
+			c.OperatorShare = nil
+		} else {
+			r := *rule
+			c.OperatorShare = &r
+		}
+		return nil
+	})
+	if err != nil {
+		return Customer{}, err
+	}
+	s.emit(Event{Type: EvCustomerShare, Actor: by, CustomerID: after.ID, CustomerSlug: after.Slug, CustomerName: after.Name,
+		From: shareText(before.OperatorShare), To: shareText(after.OperatorShare)})
+	return after, nil
+}
+
+// SetDeviceShare is SetCustomerShare for one device. The device's rule comes
+// before the customer's.
+func (s *Store) SetDeviceShare(id string, rule *ShareRule, by audit.Actor) (Device, error) {
+	if rule != nil && !rule.Valid() {
+		return Device{}, bad("operator_share", "share_invalid")
+	}
+	var before, after Device
+	var cust Customer
+	err := s.doc.Mutate(func(f *file) error {
+		for i := range f.Devices {
+			if f.Devices[i].ID != id {
+				continue
+			}
+			d := &f.Devices[i]
+			before = *d
+			if rule == nil {
+				d.OperatorShare = nil
+			} else {
+				r := *rule
+				d.OperatorShare = &r
+			}
+			after = *d
+			for _, c := range f.Customers {
+				if c.ID == d.CustomerID {
+					cust = c
+				}
+			}
+			return nil
+		}
+		return ErrDeviceNotFound
+	}, s.reindex)
+	if err != nil {
+		return Device{}, err
+	}
+	s.emit(Event{Type: EvDeviceShare, Actor: by, CustomerID: cust.ID, CustomerSlug: cust.Slug, CustomerName: cust.Name,
+		DeviceID: after.ID, Worker: after.Worker, From: shareText(before.OperatorShare), To: shareText(after.OperatorShare)})
+	return after, nil
+}
+
+// OperatorRule gives the operator's own size of the share for a device: the
+// device's rule, else its customer's. ok is false when neither has one, and the
+// proxy-wide setting applies. Level says which one it came from.
+func (s *Store) OperatorRule(customerID, deviceID string) (rule ShareRule, level string, ok bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if d, found := s.devs[deviceID]; found && d.OperatorShare != nil {
+		return *d.OperatorShare, "device", true
+	}
+	if c, found := s.custs[customerID]; found && c.OperatorShare != nil {
+		return *c.OperatorShare, "customer", true
+	}
+	return ShareRule{}, "", false
+}
+
 // RotateKey makes a new connection key; the old one stops working at once.
 // The new key is returned once and not kept.
 func (s *Store) RotateKey(id string, by audit.Actor) (string, error) {
@@ -1002,4 +1089,14 @@ func (s *Store) DeleteDevice(id string, by audit.Actor) error {
 	s.emit(Event{Type: EvDeviceDeleted, Actor: by, CustomerID: cust.ID, CustomerSlug: cust.Slug, CustomerName: cust.Name,
 		DeviceID: gone.ID, Worker: gone.Worker, From: string(gone.Status)})
 	return nil
+}
+
+// Override gives the operator's share rule set on the device or its customer,
+// in the form the operator-share rules ask for.
+func (s *Store) Override(sub opshare.Subject) (opshare.Override, bool) {
+	r, level, ok := s.OperatorRule(sub.CustomerID, sub.DeviceID)
+	if !ok {
+		return opshare.Override{}, false
+	}
+	return opshare.Override{Fraction: r.Fraction(), Level: level}, true
 }

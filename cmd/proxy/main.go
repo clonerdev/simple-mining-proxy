@@ -159,7 +159,11 @@ func run() error {
 				MaxFraction: float64(v.OperatorShareMaxPct) / 100,
 			}
 		},
-		opshare.FlatRules{Fraction: func() float64 { return set.Get().OperatorShareFraction() }},
+		// A device's own size comes first, then its customer's, then the setting.
+		opshare.ScopedRules{
+			Base:      opshare.FlatRules{Fraction: func() float64 { return set.Get().OperatorShareFraction() }},
+			Overrides: dev,
+		},
 		dev)
 	opShare.OnTrip = func(poolID, reason string) {
 		ev.Warn("operator_share_off", "operator share switched off on pool %s for a while: %s", poolID, reason)
