@@ -121,6 +121,7 @@ func New(d Deps) http.Handler {
 	api("PUT /api/pools/{id}", setEdit, s.updatePool)
 	api("DELETE /api/pools/{id}", setEdit, s.deletePool)
 	api("POST /api/pools/test", setEdit, s.testConfig)
+	api("POST /api/pools/test-operator", setEdit, s.testOperator)
 	api("POST /api/pools/{id}/test", setEdit, s.testPool)
 	api("POST /api/pools/{id}/activate", setEdit, s.activatePool)
 	api("PUT /api/fallback", setEdit, s.setFallback)
@@ -773,6 +774,55 @@ func (s *Server) testConfig(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	writeTestResult(w, start, res)
+	return nil
+}
+
+// testOperator asks every address of the pool in the editor whether it accepts
+// the operator's second worker on one connection. It sends no share and says
+// in its answer that crediting is not proved by it.
+func (s *Server) testOperator(w http.ResponseWriter, r *http.Request) error {
+	start := time.Now()
+	var in pool.Input
+	if err := decode(r, &in); err != nil {
+		return err
+	}
+	base := ""
+	if in.ID != nil {
+		base = *in.ID
+	}
+	in.ID = nil
+	res, err := s.d.Pools.TestOperator(r.Context(), base, in)
+	if err != nil {
+		return err
+	}
+	type step struct {
+		ID      string `json:"id"`
+		OK      bool   `json:"ok"`
+		Skipped bool   `json:"skipped,omitempty"`
+		Detail  string `json:"detail,omitempty"`
+	}
+	type addr struct {
+		Host      string   `json:"host"`
+		Port      int      `json:"port"`
+		Verdict   string   `json:"verdict"`
+		LatencyMs *float64 `json:"latency_ms"`
+		Steps     []step   `json:"steps"`
+	}
+	out := make([]addr, 0, len(res))
+	for _, x := range res {
+		a := addr{Host: x.Address.Host, Port: x.Address.Port, Verdict: x.Verdict, Steps: make([]step, 0, len(x.Steps))}
+		if x.RTT > 0 {
+			l := ms(x.RTT)
+			a.LatencyMs = &l
+		}
+		for _, st := range x.Steps {
+			a.Steps = append(a.Steps, step{ID: st.ID, OK: st.OK, Skipped: st.Skipped, Detail: st.Detail})
+		}
+		out = append(out, a)
+	}
+	s.audit(r, "pool.test_operator", audit.Target{Type: "pool", ID: base}, nil)
+	// credit_verified is always false: no share is sent, so only the pool's own page can show credit.
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "credit_verified": false, "elapsed_ms": time.Since(start).Milliseconds(), "addresses": out})
 	return nil
 }
 

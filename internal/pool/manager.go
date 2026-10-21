@@ -382,6 +382,34 @@ func (m *Manager) TestConfig(ctx context.Context, baseID string, in Input) ([]Ad
 	return checked(CheckAll(ctx, p, true, m.settings.Get().TestWorker))
 }
 
+// TestOperator asks every address of a pool configuration from the editor
+// whether it accepts the operator's second worker on the same connection (see
+// CheckOperator). It reports what each address did and fails only when the
+// request itself is not valid.
+func (m *Manager) TestOperator(ctx context.Context, baseID string, in Input) ([]OperatorResult, error) {
+	p := state.Pool{Password: "x"}
+	if baseID != "" {
+		cur, ok := m.snap.Load().Get(baseID)
+		if !ok {
+			return nil, apierr.PoolNotFound(baseID)
+		}
+		p = cur
+	}
+	apply(&p, in)
+	if p.Name == "" {
+		p.Name = "test"
+	}
+	if err := validate(&p); err != nil {
+		return nil, err
+	}
+	if p.OperatorUser == "" {
+		return nil, apierr.Validation(apierr.M("validation_failed", "invalid pool settings"), map[string]apierr.Msg{
+			"operator_user": apierr.M("operator_login_required", "enter the operator's login on this pool first"),
+		})
+	}
+	return CheckOperatorAll(ctx, p, m.settings.Get().TestWorker), nil
+}
+
 func checked(res []AddrResult) ([]AddrResult, error) {
 	if err := anyOK(res); err != nil {
 		return res, apierr.PoolCheckFailed(apierr.M("pool_unreachable", "no address passed the check: {error}", "error", err.Error()))
