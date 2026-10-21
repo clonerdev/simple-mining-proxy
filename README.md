@@ -1,6 +1,13 @@
-# SimpleMiningProxy
+# Bitlite
 
-A Stratum V1 proxy for SHA-256 ASIC miners. Miners connect to the proxy over TCP or TLS. For each miner the proxy opens its own connection to the active pool, rewrites the worker login to the pool account, and moves the farm to another pool when you switch it or when the pool goes down. It is one Go binary with an embedded web admin UI and runs in a single Docker container.
+| 🇺🇸 [English](README.md) | 🇮🇷 [فارسی](README-FA.md) |
+|--------------------------|----------------------------|
+
+Bitlite is a Stratum V1 proxy for SHA-256 ASIC miners with an embedded web admin UI, in one Go binary and one Docker container. Miners connect to the proxy over TCP or TLS. For each miner the proxy opens its own connection to the active pool, rewrites the worker login to the pool account, and moves the farm to another pool when you switch it or when the pool goes down.
+
+On top of the proxy, Bitlite adds what a farm host needs when other people's miners run on it: customers and devices that you approve (with an end date), roles and an audit log, an optional and transparent operator share, and a Persian (right-to-left) interface and Telegram bot next to English and Russian.
+
+Bitlite is a fork of [famfamfam/simple-mining-proxy](https://github.com/famfamfam/simple-mining-proxy), under the same GPL-3.0 license. Everything the original proxy does is kept.
 
 It was written for BTC and BCH pools. Pools for XEC, DigiByte (SHA-256) and Fractal Bitcoin that speak standard Stratum V1 should work too: the proxy does not look inside jobs or blocks, it only relays Stratum messages.
 
@@ -23,14 +30,22 @@ It was written for BTC and BCH pools. Pools for XEC, DigiByte (SHA-256) and Frac
 - Runtime settings with descriptions and validation, applied without a restart.
 - A self-signed TLS certificate on first start, or your own certificate, reloaded when it changes.
 - Connection limits and timeouts against slow or broken clients.
-- Admin UI in English and Russian that works on a phone. Everything it does is also available through a REST API.
+- Admin UI in English, Russian and Persian (right to left) that works on a phone, with light and dark themes. Everything it does is also available through a REST API.
+
+Added by Bitlite:
+
+- Customers and devices: a miner logs in as `<customer>.<worker>` with the customer's connection key; a new device waits until you approve it, for a time you choose (a week, a month, ... or no end), and you can suspend, block, resume or revoke it. Blocking one device does not touch the customer's other devices. See [Customers and device control](#customers-and-device-control).
+- Users with roles and permissions, and an audit log of who did what and when. See [Users, roles and the audit log](#users-roles-and-the-audit-log).
+- An optional operator share of a customer's mining time, off by default, with the customer's recorded consent, a cap, and an account of every window. See [Operator share](#operator-share-optional).
+- A check for the pool side of the operator share: does the pool accept a second worker on one connection. See [Checking a pool for the operator share](#checking-a-pool-for-the-operator-share).
+- Persian interface and Telegram bot, with an optional Jalali (Persian) calendar for dates.
 
 ## Quick start
 
 You need Docker Engine with Compose v2.
 
 ```bash
-git clone https://github.com/famfamfam/simple-mining-proxy.git
+git clone https://github.com/clonerdev/simple-mining-proxy.git
 cd simple-mining-proxy
 cp .env.example .env
 ```
@@ -179,7 +194,15 @@ The screen shows the everyday groups open and the technical ones (timeouts, limi
 | `hunt_switch` | off | off, on | Block hunting on eCash. |
 | `offline_after` | 1 min | 30 s – 1 h | An ASIC that sends no shares for this long is offline. |
 | `telegram_chats` | empty | chat ids, comma-separated | Chats that get the alerts and may use the bot commands. |
-| `telegram_language` | en | en, ru | Language of the alerts and the bot answers. |
+| `telegram_language` | en | en, ru, fa | Language of the alerts and the bot answers. |
+| `device_control` | off | off, on | Only customers and approved devices may mine. |
+| `device_auth_timeout` | 30 s | 5 s – 5 min | A connection without a login that device control allowed is closed after this. |
+| `device_pending_limit` | 10 | 1–100 | Devices of one customer that may wait for approval at once. |
+| `operator_share` | off | off, on | The operator share switch. |
+| `operator_share_kind` | percent | percent, minutes_per_day | Whether the amount is a percent of the time or minutes per day. |
+| `operator_share_amount` | 2 | 0–144 | The proxy-wide size, in that kind. Customers and devices can have their own. |
+| `operator_share_max_percent` | 10 % | 1–50 % | A cap on every size. |
+| `operator_share_cycle` | 15 min | 1 min – 1 h | The cycle the operator's window sits in. |
 | `tls_handshake_timeout` | 10 s | 1–60 s | Time a miner has to finish the TLS handshake. |
 | `first_message_timeout` | 15 s | 5 s – 2 min | Time a new connection has to send its first Stratum message. |
 | `upstream_dial_timeout` | 5 s | 1–30 s | Connect and TLS handshake timeout of one pool address. |
@@ -285,6 +308,68 @@ Right after an eCash block the next one has to be hundreds of times harder (Real
 
 "Solo pool" in the pool editor marks a pool that pays only for the blocks the farm finds. It is a mark on top of the role: a solo pool can be active, a fallback or the timer pool. It shows as Solo next to the role in the pool list, on the Dashboard when the farm mines there, in the solo odds next to its coin and in the Telegram `/status`. A solo pool never takes part in profit switching: comparing coins, it could move the whole farm to the lottery for good.
 
+## Customers and device control
+
+Device control is off by default: the proxy is open to every miner, as in the original. Turn on `device_control` in Settings (Devices) to let only approved devices mine.
+
+1. In Devices, add a customer. Each customer has a short name (the slug), an optional pool account name, optional limits (devices and connections) and an optional end date. The customer's **connection key** is shown once, when the customer is made or the key is changed. It is not stored; only its hash is.
+2. The customer points their miners at the proxy and logs in as `<slug>.<worker>` with the connection key as the password. The part after the first dot is the device's name.
+3. A new device is recorded as **pending** and does not mine. You approve it in Devices and choose how long it works: a week, a month, three months, six months, a year, no end, or a date of your own. Reject, suspend, resume, block, unblock and revoke are there too. The end date can be changed later.
+4. Everything is checked on the server on every login and when a device's state changes: a device that is not approved, has expired, or belongs to a suspended or blocked customer has its connections closed. Blocking or suspending one device never disconnects the customer's other approved devices.
+
+A wrong key is not a pending device: logins with a wrong key are counted per address and lock that address for a while after too many. A device with the right key that is merely pending or over a limit does not count as a failure, so customers behind one NAT address do not lock each other out.
+
+Customers have no access to the panel. Everything about customers and devices is done by the administrator.
+
+Settings: `device_control` (off), `device_auth_timeout` (30 s), `device_pending_limit` (10 devices waiting per customer).
+
+## Operator share (optional)
+
+The operator share lets the farm host take a small, fixed part of a customer's **mining time** as work for the host's own worker. It moves no money: the pool pays whoever a share is credited to, and Bitlite only records how much work went where. It never redirects a customer's mining without the customer's knowledge and agreement.
+
+It is off by default, and a share is routed to the operator only when **all** of these hold, checked on the server for every share:
+
+- `operator_share` is on in Settings (Operator share);
+- the pool is marked "credits a second worker" in the pool editor, with the operator's login on that pool;
+- you recorded the customer's consent in Devices (who recorded it and what terms are kept in the audit log; withdrawing it stops the share at once);
+- the device is approved and the rule gives it a share above zero.
+
+How it works: during short fixed windows of every cycle (`operator_share_cycle`, 15 minutes by default) the proxy puts the operator's worker in the worker field of `mining.submit` instead of the customer's. The miner never stops and never reconnects. The size is a percent of the time, or minutes per day (one hour a day is about 4.17 %), and is capped by `operator_share_max_percent` (10 % by default) whatever a rule says.
+
+Sizes can be set for the whole proxy (Settings), for a customer, and for one device in Devices. The device's own size comes first, then the customer's, then the setting; a size of 0 leaves that customer or device out. Setting a size needs the `billing.manage` permission and is written to the audit log. A size is never a consent.
+
+The Operator share page shows, for any period and customer, the time given to the operator, the number of windows, and accepted and rejected shares and difficulty on both sides. It shows no income and no payments, because Bitlite does not see any. The table can be downloaded as CSV.
+
+If a pool refuses the operator's worker, or rejects its shares, the share switches itself off on that pool for a while and the page says why. The customer's mining carries on as before.
+
+**Important:** it only works with a pool that accepts a second worker on the connection the miner opened and credits shares to it. The pools' documentation does not say whether ViaBTC does, and this has **not** been verified. Do not rely on it, and do not tell customers it works, until you have checked it yourself on a test account (below).
+
+### Checking a pool for the operator share
+
+In the pool editor, with the operator share ticked and the operator's login filled in, **Check second worker** connects to each address, logs in as the test worker, then sends the operator's `mining.authorize` on the same connection, exactly as a session does. It shows each step: connect, subscribe, authorize, job, second authorize, and whether the connection stays open. The verdict is one of: second authorize accepted, refused (with the pool's reason), no answer, connection closed, not reached.
+
+It sends no share, so it **cannot** show that the pool credits shares to the second worker; a pool may accept the second login and still credit everything to the first. To be sure:
+
+1. Use a test account on that pool, never a customer's.
+2. Turn the operator share on, record consent for a test device and mine a little through the proxy.
+3. Open the pool's own dashboard: the operator's worker must show accepted shares of its own.
+
+## Users, roles and the audit log
+
+The administrator from `ADMIN_USERNAME` and `ADMIN_PASSWORD` can make other accounts (Users). A role is a set of permissions; `superadmin` has all of them and `operator` can watch the farm and handle devices but cannot change settings or accounts. Permissions can be granted or revoked per account:
+
+| Permission | Allows |
+|---|---|
+| `stats.view`, `miners.view`, `events.view` | Dashboard, charts, miners, events |
+| `miners.control` | Reconnect all miners |
+| `settings.view`, `settings.edit` | See, change pools, settings and the bot |
+| `devices.view`, `devices.manage` | See, approve, block and limit customers and devices |
+| `billing.view`, `billing.manage` | Operator share account; consent and share sizes |
+| `audit.view` | The audit log |
+| `users.manage` | Accounts, roles and passwords |
+
+The audit log records logins, denied requests, and changes to users, customers, devices, pools and settings, with the account, address, target, result and details. Passwords, keys and tokens are never recorded. The Audit log page filters by period, group of actions, result and text, pages through older entries and downloads a CSV.
+
 ## Monitoring and alerts
 
 A working ASIC sends shares every few seconds. Every 5 seconds the proxy looks at the connected ASICs, and one that has sent no share for `offline_after` (1 minute by default) is offline, whatever the reason: powered off, hung with its connection still open, cut off from the network or pointed at another pool. The connection alone says little: a powered-off ASIC leaves it open until `miner_idle_timeout`.
@@ -341,6 +426,14 @@ The admin UI uses a JSON API under `/api/`. Scripts authenticate with `Authoriza
 | PUT | `/api/profit/home` | The main pool of profit switching: `{"pool": "btc"}`; `""` for none |
 | GET | `/api/timed` | Timed switching: target pool, time still due, next period, eCash wait; block hunting in `hunt` |
 | POST | `/api/timed/start` | Go to the timer pool now and restart the schedule from this moment |
+| GET, POST | `/api/users`, `/api/users/{id}/password` | Accounts and passwords; `GET /api/roles` lists roles and permissions |
+| GET | `/api/audit?from=&to=&action=&q=&limit=` | The audit log; `format=csv` downloads it |
+| GET, POST | `/api/customers` | Customers; the connection key is returned once, on creation |
+| POST | `/api/customers/{id}/status`, `/key`, `/fee-consent` | Customer state, a new connection key, record or withdraw consent |
+| PUT | `/api/customers/{id}/operator-share`, `/api/devices/{id}/operator-share` | Size of the operator share: `{"kind":"percent","amount":3}` or `{"inherit":true}` |
+| GET | `/api/devices` | Devices; `POST /api/devices/{id}/action` approves, suspends, blocks ... with an optional `expires_at` |
+| POST | `/api/pools/test-operator` | Check a pool for a second worker on one connection |
+| GET | `/api/operator-share/usage?from=&to=&customer=` | The operator share account per device and day |
 | GET | `/api/network` | Difficulty, block reward, price and efficiency of the coins; eCash real-time target |
 
 Errors have the form `{"error": "validation", "key": "...", "params": {...}, "message": "..."}` with status 400, 404, 409 or 422 (pool check failed). `message` is English text for scripts; the UI translates `key` with `params`.
@@ -410,7 +503,16 @@ For UI work, run `npm run dev` in `web/`: Vite reloads the page on changes and f
 | `internal/tlsutil`, `internal/atomicfile` | TLS certificates, atomic file writes |
 | `web/src` | Admin UI in React and TypeScript; translations in `web/src/i18n/locales` |
 
-The server does not translate text. API errors carry a key and parameters, and the UI translates them; `web/src/i18n/locales.test.ts` checks that every key used in the Go code and every setting is translated into both languages. The Telegram bot is the exception: its messages are made on the server, from the English and Russian texts in `internal/telegram/texts.go`.
+The server does not translate text. API errors carry a key and parameters, and the UI translates them; `web/src/i18n/locales.test.ts` checks that every key used in the Go code and every setting is translated into all three languages (English, Russian, Persian). The Telegram bot is the exception: its messages are made on the server, from the texts in `internal/telegram/texts.go`.
+
+## Security notes
+
+- Keep the admin port on localhost and reach it through an SSH tunnel or a VPN; if it must be reachable from the internet, put it behind an HTTPS reverse proxy. The UI itself is plain HTTP.
+- Use a long, unique `ADMIN_PASSWORD`, one account per person, and keep `API_TOKEN` and the Telegram bot token in environment variables or the admin UI, never in the repository.
+- Keep ASICs on a separate network that may reach only the proxy, and change the default password of their own web panel.
+- Open the Stratum ports only to the addresses your miners connect from. Prefer the TLS port where the firmware supports it; otherwise use a VPN between the farm and the proxy.
+- Turn on `device_control` when other people's miners connect, so that only approved devices mine.
+- `state.json` and `devices.json` hold pool passwords, the bot token and customer records in plain text, and the connection keys are stored as hashes: protect the Docker host and the backups.
 
 ## Limitations
 
@@ -419,6 +521,10 @@ The server does not translate text. API errors carry a key and parameters, and t
 - The counters in the miners table start from zero after a restart; the history for the charts is kept on disk.
 - Profit switching ignores pool fees, payout schemes and payout delays.
 - No built-in ACME / Let's Encrypt.
+- The operator share needs a pool that credits a second worker on one connection. It is unverified for ViaBTC: test it on your own account first.
+- There is no billing engine yet: Bitlite records work, not money. It issues no invoices and confirms no payments.
+- Customers cannot sign in; everything is managed by administrators.
+- The Jalali calendar is for display only, in Persian; stored times and exports are UTC.
 - Firmware, certificates and pools differ: try a few miners before moving the whole farm, and compare the reject rate with a direct pool connection.
 
 ## License
