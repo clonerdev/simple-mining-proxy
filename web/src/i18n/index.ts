@@ -3,9 +3,11 @@ import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
 import en from './locales/en.json'
 import { isolateTechnicalRuns } from './bidi'
+import { calendars, localeFor, type Calendar } from './calendar'
 import fa from './locales/fa.json'
 import ru from './locales/ru.json'
 
+export { calendars, localeFor, type Calendar }
 export const languages = ['en', 'ru', 'fa'] as const
 export type Language = (typeof languages)[number]
 
@@ -15,15 +17,8 @@ const rtlLanguages: ReadonlySet<Language> = new Set<Language>(['fa'])
 /** Display name of each language in the language picker, in its own script. */
 export const languageNames: Record<Language, string> = { en: 'English', ru: 'Русский', fa: 'فارسی' }
 
-/**
- * BCP 47 locale per language for numbers and dates. Persian keeps Latin
- * digits and the Gregorian calendar: hashrates, ports, addresses and the
- * timestamps in Docker logs are all Latin and Gregorian, and the panel
- * should read the same as the logs.
- */
-const locales: Record<Language, string> = { en: 'en-GB', ru: 'ru-RU', fa: 'fa-IR-u-ca-gregory-nu-latn' }
-
 const storageKey = 'lang'
+const calendarKey = 'calendar'
 
 // The language is the one the operator picked (kept in localStorage) or the
 // first supported one in the browser's preference list; English otherwise.
@@ -77,9 +72,29 @@ export function setLanguage(lng: Language) {
   void i18n.changeLanguage(lng)
 }
 
-/** BCP 47 locale for numbers and dates in the current language. */
+/** The calendar the operator chose in this browser; Gregorian when nothing was chosen. */
+export function currentCalendar(): Calendar {
+  try {
+    const v = localStorage.getItem(calendarKey)
+    return calendars.find((c) => c === v) ?? 'gregory'
+  } catch {
+    return 'gregory'
+  }
+}
+
+export function setCalendar(c: Calendar) {
+  try {
+    localStorage.setItem(calendarKey, c)
+  } catch {
+    // Storage may be blocked; the choice then lasts until the next load.
+  }
+  // Changing the language to the current one tells every screen to draw again.
+  void i18n.changeLanguage(currentLanguage())
+}
+
+/** BCP 47 locale for numbers and dates in the current language and calendar. */
 export function locale(): string {
-  return locales[currentLanguage()]
+  return localeFor(currentLanguage(), currentCalendar())
 }
 
 export default i18n

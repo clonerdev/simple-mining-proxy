@@ -13,7 +13,12 @@
     "settings": "تنظیمات",
     "logout": "خروج",
     "language": "زبان",
-    "uptime": "مدت فعالیت: {{value}}"
+    "uptime": "مدت فعالیت: {{value}}",
+    "calendar": "تقویم",
+    "calendars": {
+      "gregory": "میلادی",
+      "persian": "شمسی"
+    }
   },
   "common": {
     "loading": "در حال بارگذاری…",

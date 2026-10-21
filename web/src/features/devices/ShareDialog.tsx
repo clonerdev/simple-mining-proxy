@@ -4,6 +4,7 @@ import { api } from '../../api/client'
 import type { ShareKind, ShareRule } from '../../api/types'
 import { Modal } from '../../components/Modal'
 import { amountText, parseAmount, shareFraction, shareKinds, shareMax, validShare } from '../../lib/share'
+import { locale } from '../../i18n'
 import { formatPercent } from '../../lib/usage'
 import { Field } from './Field'
 import { useRun } from './useRun'
@@ -19,7 +20,7 @@ export type ShareSubject =
  * whether anything is taken, on every share.
  */
 export function ShareDialog({ subject, onClose }: { subject: ShareSubject; onClose: () => void }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const { busy, run } = useRun()
   const own = subject.rule
   // Without a rule of its own the subject follows the wider one.
@@ -92,7 +93,7 @@ export function ShareDialog({ subject, onClose }: { subject: ShareSubject; onClo
             <Field
               label={t('share.rules.amount')}
               error={error}
-              help={rule ? (rule.amount === 0 ? t('share.rules.leftOut') : t('share.rules.about', { value: formatPercent(shareFraction(rule), i18n.language) })) : t('share.rules.range', { max: shareMax[kind] })}
+              help={rule ? (rule.amount === 0 ? t('share.rules.leftOut') : t('share.rules.about', { value: formatPercent(shareFraction(rule), locale()) })) : t('share.rules.range', { max: shareMax[kind] })}
             >
               <input type="text" inputMode="decimal" value={amount} autoComplete="off" onChange={(e) => setAmount(e.target.value)} />
             </Field>

@@ -13,7 +13,12 @@
     "settings": "Settings",
     "logout": "Log out",
     "language": "Language",
-    "uptime": "uptime {{value}}"
+    "uptime": "uptime {{value}}",
+    "calendar": "Calendar",
+    "calendars": {
+      "gregory": "Gregorian",
+      "persian": "Jalali"
+    }
   },
   "common": {
     "loading": "Loading…",
