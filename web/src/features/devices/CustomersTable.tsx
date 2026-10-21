@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import type { Customer, DeviceStatus } from '../../api/types'
+import { ShareText } from './ShareText'
 import { statusOrder } from '../../lib/deviceActions'
 import { formatHashrateHs } from '../../lib/format'
 import { CustomerStatusBadge, Expiry } from './Status'
@@ -7,9 +8,12 @@ import { CustomerStatusBadge, Expiry } from './Status'
 interface Props {
   customers: Customer[]
   canManage: boolean
+  /** Whether the account may set the share (billing.manage); the server checks again. */
+  canShare?: boolean
   onEdit: (c: Customer) => void
   onState: (c: Customer) => void
   onConsent: (c: Customer) => void
+  onShare?: (c: Customer) => void
   onKey: (c: Customer) => void
   onDelete: (c: Customer) => void
 }
@@ -23,7 +27,7 @@ function Counts({ devices }: { devices: Customer['devices'] }) {
   return <>{parts.length ? parts.join(' · ') : <span className="muted">—</span>}</>
 }
 
-export function CustomersTable({ customers, canManage, onEdit, onState, onConsent, onKey, onDelete }: Props) {
+export function CustomersTable({ customers, canManage, canShare, onShare, onEdit, onState, onConsent, onKey, onDelete }: Props) {
   const { t } = useTranslation()
   return (
     <div className="panel table-wrap">
@@ -36,6 +40,7 @@ export function CustomersTable({ customers, canManage, onEdit, onState, onConsen
             <th>{t('devices.limits')}</th>
             <th>{t('devices.ends')}</th>
             <th>{t('devices.consent')}</th>
+            <th>{t('share.rules.column')}</th>
             <th className="num">{t('devices.hashrate')}</th>
             <th>
               <span className="sr-only">{t('devices.actions')}</span>
@@ -72,6 +77,9 @@ export function CustomersTable({ customers, canManage, onEdit, onState, onConsen
               <td data-label={t('devices.consent')}>
                 {c.fee_consent ? <span className="badge ok">{t('devices.consentYes')}</span> : <span className="muted">{t('devices.consentNo')}</span>}
               </td>
+              <td data-label={t('share.rules.column')}>
+                <ShareText rule={c.operator_share} fallback={t('share.rules.setting')} />
+              </td>
               <td className="num" data-label={t('devices.hashrate')}>
                 {c.live.sessions > 0 ? formatHashrateHs(c.live.hashrate_hs) : '—'}
               </td>
@@ -87,6 +95,11 @@ export function CustomersTable({ customers, canManage, onEdit, onState, onConsen
                     <button type="button" className="small" onClick={() => onConsent(c)}>
                       {t('devices.consent')}
                     </button>
+                    {canShare && onShare && (
+                      <button type="button" className="small" onClick={() => onShare(c)}>
+                        {t('share.rules.button')}
+                      </button>
+                    )}
                     <button type="button" className="small" onClick={() => onKey(c)}>
                       {t('devices.newKey')}
                     </button>

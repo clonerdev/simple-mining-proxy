@@ -2,19 +2,23 @@ import { useTranslation } from 'react-i18next'
 import type { Device, DeviceAction } from '../../api/types'
 import { actionsFor, canDelete, deviceLabel, isDanger } from '../../lib/deviceActions'
 import { formatAgo, formatHashrateHs } from '../../lib/format'
+import { ShareText } from './ShareText'
 import { DeviceStatusBadge, Expiry } from './Status'
 
 interface Props {
   devices: Device[]
   /** Whether the signed-in account may change devices (the server checks again). */
   canManage: boolean
+  /** Whether the account may set the share (billing.manage); the server checks again. */
+  canShare?: boolean
   onAction: (d: Device, action: DeviceAction) => void
   onEdit: (d: Device) => void
+  onShare?: (d: Device) => void
   onDelete: (d: Device) => void
 }
 
 /** Devices with the actions an administrator can take on each state. */
-export function DevicesTable({ devices, canManage, onAction, onEdit, onDelete }: Props) {
+export function DevicesTable({ devices, canManage, canShare, onShare, onAction, onEdit, onDelete }: Props) {
   const { t } = useTranslation()
   return (
     <div className="panel table-wrap">
@@ -25,6 +29,7 @@ export function DevicesTable({ devices, canManage, onAction, onEdit, onDelete }:
             <th>{t('devices.state')}</th>
             <th>{t('devices.ends')}</th>
             <th>{t('devices.lastSeen')}</th>
+            <th>{t('share.rules.column')}</th>
             <th className="num">{t('devices.hashrate')}</th>
             <th>
               <span className="sr-only">{t('devices.actions')}</span>
@@ -52,6 +57,9 @@ export function DevicesTable({ devices, canManage, onAction, onEdit, onDelete }:
               <td data-label={t('devices.lastSeen')}>
                 {d.live.sessions > 0 ? <span className="badge ok">{t('devices.online')}</span> : formatAgo(d.last_seen, t)}
               </td>
+              <td data-label={t('share.rules.column')}>
+                <ShareText rule={d.operator_share} fallback="—" />
+              </td>
               <td className="num" data-label={t('devices.hashrate')}>
                 {d.live.sessions > 0 ? formatHashrateHs(d.live.hashrate_hs) : '—'}
               </td>
@@ -71,6 +79,11 @@ export function DevicesTable({ devices, canManage, onAction, onEdit, onDelete }:
                     <button type="button" className="small" onClick={() => onEdit(d)}>
                       {t('devices.edit')}
                     </button>
+                    {canShare && onShare && (
+                      <button type="button" className="small" onClick={() => onShare(d)}>
+                        {t('share.rules.button')}
+                      </button>
+                    )}
                     {canDelete(d.status) && (
                       <button type="button" className="small danger" onClick={() => onDelete(d)}>
                         {t('devices.delete')}

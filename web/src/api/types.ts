@@ -444,6 +444,14 @@ export interface FeeConsent {
   note?: string
 }
 
+export type ShareKind = 'percent' | 'minutes_per_day'
+
+/** The size of the operator's share of the mining time; an amount of 0 leaves the subject out. */
+export interface ShareRule {
+  kind: ShareKind
+  amount: number
+}
+
 export interface Customer {
   id: string
   slug: string
@@ -458,6 +466,8 @@ export interface Customer {
   language?: string
   notes?: string
   fee_consent?: FeeConsent
+  /** The customer's own size of the share; without it the proxy-wide setting applies. */
+  operator_share?: ShareRule
   key_rotated_at: string
   created_at: string
   updated_at: string
@@ -487,6 +497,8 @@ export interface Device {
   expires_at?: string
   max_connections: number
   notes?: string
+  /** The device's own size of the share; it comes before its customer's. */
+  operator_share?: ShareRule
   user_agent?: string
   last_ip?: string
   first_seen: string

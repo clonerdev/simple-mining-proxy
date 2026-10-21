@@ -666,7 +666,8 @@
     "operator_share_unavailable": "The operator share is not available on this server.",
     "bad_date": "{{name}} must be a date like 2006-01-02.",
     "bad_range": "The end date is before the start date.",
-    "operator_login_required": "Enter the operator's login on this pool first"
+    "operator_login_required": "Enter the operator's login on this pool first",
+    "device_share_invalid": "A share is a percent from 0 to 100, or minutes per day from 0 to 1440"
   },
   "stats": {
     "title": "Charts",
@@ -1067,7 +1068,34 @@
     "day": "Day",
     "device": "Device",
     "empty": "No operator-share activity in this period.",
-    "emptyHelp": "That is expected while the share is off, no pool is marked for it, or no customer has given consent: nothing is taken in any of these cases."
+    "emptyHelp": "That is expected while the share is off, no pool is marked for it, or no customer has given consent: nothing is taken in any of these cases.",
+    "rules": {
+      "title": "Operator share of {{name}}",
+      "column": "Share",
+      "button": "Share",
+      "setting": "setting",
+      "help": "The size of the operator's share of the mining time. It sets only a size: nothing is taken without the customer's recorded consent, the proxy-wide switch, a pool that credits a second worker, and the cap in the settings.",
+      "noConsent": "No consent is recorded for this customer, so nothing is taken from their mining whatever size is set here.",
+      "size": "Size",
+      "inheritSetting": "Use the setting for the whole proxy",
+      "inheritCustomer": "Use the customer's size",
+      "own": "Its own size",
+      "kind": "Kind",
+      "kinds": {
+        "percent": "Percent of the mining time",
+        "minutes_per_day": "Minutes of mining per day"
+      },
+      "amount": "Amount",
+      "about": "About {{value}} of the mining time",
+      "leftOut": "Left out: nothing is taken",
+      "range": "A number from 0 to {{max}}",
+      "invalid": "Enter a number from 0 to {{max}}",
+      "leftOutShort": "left out",
+      "text": {
+        "percent": "{{value}}%",
+        "minutes_per_day": "{{value}} min/day"
+      }
+    }
   },
   "probe": {
     "title": "Second worker check",

@@ -149,5 +149,6 @@ export function usageCsv(rows: DayUsage[], names: Names): string {
 
 /** A fraction of 0 to 1 as a percent in the language of the screen: "10%", "4.17%", "0.5%". */
 export function formatPercent(fraction: number, locale: string): string {
-  return `${(fraction * 100).toLocaleString(locale, { maximumFractionDigits: 2 })}%`
+  // The locale's own percent sign and digits, so that right-to-left text reads in order.
+  return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 2 }).format(fraction)
 }

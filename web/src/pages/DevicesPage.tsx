@@ -10,6 +10,7 @@ import { ConsentDialog, CustomerStatusDialog, KeyDialog } from '../features/devi
 import { CustomersTable } from '../features/devices/CustomersTable'
 import { DeviceActionDialog } from '../features/devices/DeviceActionDialog'
 import { DeviceEditDialog } from '../features/devices/DeviceEditDialog'
+import { ShareDialog, type ShareSubject } from '../features/devices/ShareDialog'
 import { DevicesTable } from '../features/devices/DevicesTable'
 import { useRun } from '../features/devices/useRun'
 import { useSessionState } from '../hooks/useSessionState'
@@ -24,6 +25,7 @@ type Dialog =
   | { kind: 'customer'; customer: Customer | null }
   | { kind: 'state'; customer: Customer }
   | { kind: 'consent'; customer: Customer }
+  | { kind: 'share'; subject: ShareSubject }
   | { kind: 'key'; customer: Customer; secret: string }
 
 const rank = (s: DeviceStatus) => statusOrder.indexOf(s)
@@ -39,6 +41,7 @@ export function DevicesPage() {
   const customers = useCustomers()
   const devices = useDevices()
   const canManage = useCan('devices.manage')
+  const canShare = useCan('billing.manage')
   const confirm = useConfirm()
   const { run } = useRun()
   const [dialog, setDialog] = useState<Dialog | null>(null)
@@ -53,6 +56,16 @@ export function DevicesPage() {
   const shown = all.filter((d) => (filter === 'all' || d.status === filter) && matches(d, query))
   const counts = devices.data?.counts.devices ?? {}
   const close = () => setDialog(null)
+
+  const shareOfCustomer = (c: Customer) =>
+    setDialog({ kind: 'share', subject: { kind: 'customer', id: c.id, name: c.name, rule: c.operator_share, consent: !!c.fee_consent } })
+  const shareOfDevice = (d: Device) => {
+    const c = customers.data?.customers.find((x) => x.id === d.customer_id)
+    setDialog({
+      kind: 'share',
+      subject: { kind: 'device', id: d.id, name: deviceLabel(d), rule: d.operator_share, customerRule: c?.operator_share, consent: !!c?.fee_consent },
+    })
+  }
 
   const onAction = (device: Device, action: DeviceAction) => setDialog({ kind: 'action', device, action })
 
@@ -117,6 +130,8 @@ export function DevicesPage() {
           <DevicesTable
             devices={pending}
             canManage={canManage}
+            canShare={canShare}
+            onShare={shareOfDevice}
             onAction={onAction}
             onEdit={(d) => setDialog({ kind: 'device', device: d })}
             onDelete={(d) => void deleteDevice(d)}
@@ -156,6 +171,8 @@ export function DevicesPage() {
           <DevicesTable
             devices={shown}
             canManage={canManage}
+            canShare={canShare}
+            onShare={shareOfDevice}
             onAction={onAction}
             onEdit={(d) => setDialog({ kind: 'device', device: d })}
             onDelete={(d) => void deleteDevice(d)}
@@ -178,6 +195,8 @@ export function DevicesPage() {
           <CustomersTable
             customers={customers.data.customers}
             canManage={canManage}
+            canShare={canShare}
+            onShare={shareOfCustomer}
             onEdit={(c) => setDialog({ kind: 'customer', customer: c })}
             onState={(c) => setDialog({ kind: 'state', customer: c })}
             onConsent={(c) => setDialog({ kind: 'consent', customer: c })}
@@ -201,6 +220,7 @@ export function DevicesPage() {
       )}
       {dialog?.kind === 'state' && <CustomerStatusDialog customer={dialog.customer} onClose={close} />}
       {dialog?.kind === 'consent' && <ConsentDialog customer={dialog.customer} onClose={close} />}
+      {dialog?.kind === 'share' && <ShareDialog subject={dialog.subject} onClose={close} />}
       {dialog?.kind === 'key' && <KeyDialog customer={dialog.customer} secret={dialog.secret} onClose={close} />}
     </>
   )

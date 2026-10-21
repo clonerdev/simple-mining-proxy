@@ -32,6 +32,7 @@ import type {
   TelegramStatus,
   TestResult,
   OperatorProbe,
+  ShareRule,
   TimedStatus,
   WorkerSeries,
   WorkerSummary,
@@ -152,6 +153,11 @@ export const api = {
   /** The administrator records (grant) or withdraws the customer's consent to the operator's share. */
   setFeeConsent: (id: string, grant: boolean, terms: string, note: string) =>
     request<Customer>('POST', `${customer(id)}/fee-consent`, { grant, terms, note }),
+  /** The size of the operator's share for a customer; a null rule goes back to the proxy-wide setting. Needs billing.manage. */
+  setCustomerShare: (id: string, rule: ShareRule | null) =>
+    request<Customer>('PUT', `${customer(id)}/operator-share`, rule ?? { inherit: true }),
+  setDeviceShare: (id: string, rule: ShareRule | null) =>
+    request<Device>('PUT', `${device(id)}/operator-share`, rule ?? { inherit: true }),
   deleteCustomer: (id: string) => request<{ ok: boolean }>('DELETE', customer(id)),
 
   /** status and customer narrow the list; "" means all. */
